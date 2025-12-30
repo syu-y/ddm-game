@@ -41,6 +41,29 @@
         </div>
       </div>
     </div>
+
+    {#if !isOpponent && (player.crests.attack > 0 || player.crests.defense > 0 || player.crests.movement > 0 || player.crests.magic > 0 || player.crests.trap > 0)}
+      <div class="crests-pool">
+        <h4>クレスト</h4>
+        <div class="crest-list">
+          {#if player.crests.attack > 0}
+            <div class="crest-item">⚔️ {player.crests.attack}</div>
+          {/if}
+          {#if player.crests.defense > 0}
+            <div class="crest-item">🛡️ {player.crests.defense}</div>
+          {/if}
+          {#if player.crests.movement > 0}
+            <div class="crest-item">➡️ {player.crests.movement}</div>
+          {/if}
+          {#if player.crests.magic > 0}
+            <div class="crest-item">✨ {player.crests.magic}</div>
+          {/if}
+          {#if player.crests.trap > 0}
+            <div class="crest-item">💣 {player.crests.trap}</div>
+          {/if}
+        </div>
+      </div>
+    {/if}
   </div>
 {/if}
 
@@ -127,5 +150,31 @@
     font-size: 0.8rem;
     opacity: 0.8;
     margin-top: 2px;
+  }
+
+  .crests-pool {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 2px solid rgba(255, 255, 255, 0.2);
+  }
+
+  .crests-pool h4 {
+    margin: 0 0 8px 0;
+    font-size: 0.9rem;
+    opacity: 0.8;
+  }
+
+  .crest-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .crest-item {
+    background: rgba(255, 255, 255, 0.2);
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    font-weight: bold;
   }
 </style>

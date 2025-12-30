@@ -3,7 +3,7 @@
 
   export let board: Tile[][];
 
-  const BOARD_SIZE = 13; // 13x13グリッド
+  const BOARD_SIZE = 13;
 </script>
 
 <div class="board">
@@ -11,33 +11,19 @@
     <div class="row">
       {#each Array(BOARD_SIZE) as _, x}
         {@const tile = board[y]?.[x]}
-        <div class="tile {tile?.type || 'empty'}">
-          {#if tile?.type === 'player'}
-            <div class="player-marker">👤</div>
+        <div class="tile {tile?.type || 'empty'} {tile?.owner ? 'owned' : ''}" data-owner={tile?.owner}>
+          {#if tile?.type === 'master'}
+            <div class="master-marker">👤</div>
           {:else if tile?.type === 'monster'}
             <div class="monster-marker">🐉</div>
           {:else if tile?.type === 'dungeon'}
-            <div class="dungeon-tile" style="background-color: {getCrestColor(tile.crest)}"></div>
+            <div class="dungeon-tile"></div>
           {/if}
         </div>
       {/each}
     </div>
   {/each}
 </div>
-
-<script lang="ts" context="module">
-  function getCrestColor(crest?: string): string {
-    const colors: Record<string, string> = {
-      dark: '#6a1b9a',
-      light: '#ffd54f',
-      fire: '#f4511e',
-      water: '#039be5',
-      earth: '#6d4c41',
-      wind: '#66bb6a'
-    };
-    return crest ? colors[crest] || '#424242' : '#424242';
-  }
-</script>
 
 <style>
   .board {
@@ -66,6 +52,19 @@
     background: rgba(255, 255, 255, 0.05);
   }
 
+  .tile.dungeon {
+    background: rgba(100, 100, 255, 0.3);
+  }
+
+  .tile.monster {
+    background: rgba(255, 100, 100, 0.5);
+  }
+
+  .tile.master {
+    background: rgba(255, 215, 0, 0.5);
+    border: 2px solid gold;
+  }
+
   .tile:hover {
     background: rgba(255, 255, 255, 0.15);
     cursor: pointer;
@@ -77,7 +76,23 @@
     opacity: 0.7;
   }
 
-  .player-marker, .monster-marker {
+  .master-marker, .monster-marker {
     font-size: 24px;
+  }
+
+  /* オーナーによる色分け */
+  .tile.owned[data-owner] {
+    position: relative;
+  }
+
+  .tile.owned::after {
+    content: '';
+    position: absolute;
+    bottom: 2px;
+    right: 2px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--owner-color, white);
   }
 </style>

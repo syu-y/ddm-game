@@ -1,12 +1,16 @@
 <script lang="ts">
   import type { GamePhase } from '$lib/game/types';
-  import { rollDice, endTurn } from '$lib/stores/game-store';
+  import { rollDice, endPhase, endTurn } from '$lib/stores/game-store';
 
   export let phase: GamePhase;
   export let isYourTurn: boolean;
 
   function handleRollDice() {
     rollDice();
+  }
+
+  function handleEndPhase() {
+    endPhase();
   }
 
   function handleEndTurn() {
@@ -45,33 +49,28 @@
             <span class="btn-icon">✨</span>
             <span>召喚</span>
           </button>
-          <button class="btn btn-secondary" on:click={handleEndTurn}>
-            スキップ
+          <button class="btn btn-secondary" on:click={handleEndPhase}>
+            フェーズ終了
           </button>
-          <button class="btn btn-end" on:click={handleEndTurn}>
-            <span class="btn-icon">🏁</span>
-            <span>ターン終了</span>
-          </button>
-        {:else if phase === 'move'}
+        {:else if phase === 'movement'}
           <button class="btn btn-primary" disabled>
             <span class="btn-icon">👣</span>
             <span>移動</span>
           </button>
-          <button class="btn btn-secondary" on:click={handleEndTurn}>
-            スキップ
+          <button class="btn btn-secondary" on:click={handleEndPhase}>
+            フェーズ終了
           </button>
-          <button class="btn btn-end" on:click={handleEndTurn}>
-            <span class="btn-icon">🏁</span>
-            <span>ターン終了</span>
-          </button>
-        {:else if phase === 'attack'}
+        {:else if phase === 'battle'}
           <button class="btn btn-primary" disabled>
             <span class="btn-icon">⚔️</span>
             <span>攻撃</span>
           </button>
-          <button class="btn btn-secondary" on:click={handleEndTurn}>
-            スキップ
+          <button class="btn btn-secondary" on:click={handleEndPhase}>
+            フェーズ終了
           </button>
+        {/if}
+        
+        {#if phase !== 'roll'}
           <button class="btn btn-end" on:click={handleEndTurn}>
             <span class="btn-icon">🏁</span>
             <span>ターン終了</span>
@@ -93,8 +92,8 @@
       waiting: '待機中',
       roll: 'ダイスロール',
       summon: '召喚フェーズ',
-      move: '移動フェーズ',
-      attack: '攻撃フェーズ',
+      movement: '移動フェーズ',
+      battle: '戦闘フェーズ',
       end: '終了',
       gameover: 'ゲーム終了'
     };

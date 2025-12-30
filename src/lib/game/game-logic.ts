@@ -1,6 +1,17 @@
-import type { GameState, Player } from './types';
+import type { GameState, Player, CrestPool } from './types';
 import { createEmptyBoard, setPlayerPositions } from './board';
 import { createDicePool } from './dice';
+
+// クレストプールを初期化
+function createEmptyCrestPool(): CrestPool {
+  return {
+    attack: 0,
+    defense: 0,
+    movement: 0,
+    magic: 0,
+    trap: 0
+  };
+}
 
 // ゲーム状態を初期化
 export function initializeGame(
@@ -17,7 +28,8 @@ export function initializeGame(
     lifePoints: 3,
     dicePool: createDicePool(player1Id),
     hand: [],
-    position: { x: 0, y: 0 } // 後で設定
+    position: { x: 0, y: 0 }, // 後で設定
+    crests: createEmptyCrestPool()
   };
 
   // プレイヤー2を作成
@@ -27,7 +39,8 @@ export function initializeGame(
     lifePoints: 3,
     dicePool: createDicePool(player2Id),
     hand: [],
-    position: { x: 0, y: 0 } // 後で設定
+    position: { x: 0, y: 0 }, // 後で設定
+    crests: createEmptyCrestPool()
   };
 
   // 盤面を作成
@@ -39,7 +52,7 @@ export function initializeGame(
     id: gameId,
     players: [player1, player2],
     board,
-    currentTurn: player1Id, // プレイヤー1から開始
+    currentTurn: player1Id,
     phase: 'roll'
   };
 }
@@ -65,4 +78,14 @@ export function switchTurn(state: GameState): void {
   const nextIndex = (currentIndex + 1) % state.players.length;
   state.currentTurn = state.players[nextIndex].id;
   state.phase = 'roll';
+
+  // ターン開始時にクレストプールをリセット
+  const nextPlayer = state.players[nextIndex];
+  nextPlayer.crests = {
+    attack: 0,
+    defense: 0,
+    movement: 0,
+    magic: 0,
+    trap: 0
+  };
 }

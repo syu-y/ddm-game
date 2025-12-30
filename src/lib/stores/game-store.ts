@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 import { writable, get } from 'svelte/store';
 import type { GameState, GameAction, RolledDice } from '$lib/game/types';
 import { io, type Socket } from 'socket.io-client';
@@ -19,6 +18,9 @@ export const gameStarted = writable<boolean>(false);
 export const isRolling = writable<boolean>(false);
 export const rolledResults = writable<RolledDice[]>([]);
 
+let rollAnimationTimer: number | null = null;
+let previousHandSize = 0;
+
 // Socket.io接続
 export function connectSocket() {
   const socketInstance = io('http://localhost:5173');
@@ -26,7 +28,7 @@ export function connectSocket() {
   socketInstance.on('connect', () => {
     console.log('WebSocket接続成功');
     connectionStatus.set('connected');
-    playerId.set(socketInstance.id ? socketInstance.id : null);
+    playerId.set(socketInstance.id);
   });
 
   socketInstance.on('disconnect', () => {
@@ -36,6 +38,23 @@ export function connectSocket() {
 
   socketInstance.on('game-state', (state) => {
     console.log('ゲーム状態更新:', state);
+
+    const currentPlayerId = get(playerId);
+    const player = state.players.find(p => p.id === currentPlayerId);
+
+    // ロールアニメーション中で、手札が増えた場合
+    if (get(isRolling) && player) {
+      const currentHandSize = player.hand.length;
+
+      // 手札が増えていたら、新しいダイスを結果として設定
+      if (currentHandSize > previousHandSize) {
+        const newDice = player.hand.slice(previousHandSize);
+        console.log('ロール結果を設定:', newDice);
+        rolledResults.set(newDice);
+        previousHandSize = currentHandSize;
+      }
+    }
+
     gameState.set(state);
   });
 
@@ -67,7 +86,7 @@ export async function createRoom(name: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const socketInstance = connectSocket();
 
-    socketInstance.emit('create-room', name, (newRoomId: string) => {
+    socketInstance.emit('create-room', name, (newRoomId) => {
       roomId.set(newRoomId);
       playerName.set(name);
       console.log(`ルーム作成成功: ${newRoomId}`);
@@ -81,7 +100,7 @@ export async function joinRoom(id: string, name: string): Promise<boolean> {
   return new Promise((resolve) => {
     const socketInstance = connectSocket();
 
-    socketInstance.emit('join-room', id, name, (success: boolean) => {
+    socketInstance.emit('join-room', id, name, (success) => {
       if (success) {
         roomId.set(id);
         playerName.set(name);
@@ -106,37 +125,37 @@ export function sendGameAction(action: GameAction) {
 
 // ダイスロール（アニメーション付き）
 export function rollDice() {
-  // アニメーション開始前に現在の手札をキャプチャ
-  const currentState = get(gameState);
-  const currentPlayer = currentState?.players.find(p => p.id === get(playerId));
-  const beforeHandCount = currentPlayer?.hand.length || 0;
+  console.log('ダイスロール開始');
+
+  // 既存のタイマーをクリア
+  if (rollAnimationTimer !== null) {
+    clearTimeout(rollAnimationTimer);
+  }
+
+  // 現在の手札サイズを記録
+  const state = get(gameState);
+  const player = state?.players.find(p => p.id === get(playerId));
+  previousHandSize = player?.hand.length || 0;
 
   // アニメーション開始
   isRolling.set(true);
+  rolledResults.set([]);
 
   // サーバーにダイスロールを送信
   sendGameAction({ type: 'ROLL_DICE' });
 
-  // ゲーム状態の更新を監視
-  const unsubscribe = gameState.subscribe((state) => {
-    if (!state) return;
+  // 3秒後に確実にアニメーション終了
+  rollAnimationTimer = window.setTimeout(() => {
+    console.log('アニメーション終了');
+    isRolling.set(false);
+    rolledResults.set([]);
+    rollAnimationTimer = null;
+  }, 3000);
+}
 
-    const player = state.players.find(p => p.id === get(playerId));
-    if (!player) return;
-
-    // 手札が増えたらアニメーション用の結果を設定
-    if (player.hand.length > beforeHandCount) {
-      const newDice = player.hand.slice(beforeHandCount);
-      rolledResults.set(newDice);
-
-      // アニメーション完了後にクリーンアップ
-      setTimeout(() => {
-        isRolling.set(false);
-        rolledResults.set([]);
-        unsubscribe();
-      }, 5000); // 5秒後にアニメーション終了
-    }
-  });
+// フェーズ終了
+export function endPhase() {
+  sendGameAction({ type: 'END_PHASE' });
 }
 
 // ターン終了

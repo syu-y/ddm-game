@@ -20,23 +20,23 @@ export function createEmptyBoard(): Tile[][] {
   return board;
 }
 
-// プレイヤーの初期位置を設定
+// プレイヤーの初期位置を設定（ダンジョンマスター）
 export function setPlayerPositions(board: Tile[][], player1: Player, player2: Player): void {
-  // プレイヤー1は左下
-  const p1Pos = { x: 0, y: BOARD_SIZE - 1 };
+  // プレイヤー1は左下（中央）
+  const p1Pos = { x: 0, y: Math.floor(BOARD_SIZE / 2) };
   player1.position = p1Pos;
   board[p1Pos.y][p1Pos.x] = {
     position: p1Pos,
-    type: 'player',
+    type: 'master', // 'player' から 'master' に変更
     owner: player1.id
   };
 
-  // プレイヤー2は右上
-  const p2Pos = { x: BOARD_SIZE - 1, y: 0 };
+  // プレイヤー2は右上（中央）
+  const p2Pos = { x: BOARD_SIZE - 1, y: Math.floor(BOARD_SIZE / 2) };
   player2.position = p2Pos;
   board[p2Pos.y][p2Pos.x] = {
     position: p2Pos,
-    type: 'player',
+    type: 'master', // 'player' から 'master' に変更
     owner: player2.id
   };
 }
@@ -63,4 +63,30 @@ export function getTile(board: Tile[][], pos: Position): Tile | null {
 export function setTile(board: Tile[][], tile: Tile): void {
   if (!isInBounds(tile.position)) return;
   board[tile.position.y][tile.position.x] = tile;
+}
+
+// 指定位置が自軍のマスター or 自軍のダンジョンに隣接しているか確認
+export function canDeployAt(board: Tile[][], pos: Position, playerId: string): boolean {
+  if (!isInBounds(pos)) return false;
+
+  const tile = getTile(board, pos);
+  if (!tile || tile.type !== 'empty') return false;
+
+  // 上下左右の隣接マスをチェック
+  const adjacentPositions = [
+    { x: pos.x - 1, y: pos.y },
+    { x: pos.x + 1, y: pos.y },
+    { x: pos.x, y: pos.y - 1 },
+    { x: pos.x, y: pos.y + 1 }
+  ];
+
+  for (const adjPos of adjacentPositions) {
+    const adjTile = getTile(board, adjPos);
+    if (adjTile && adjTile.owner === playerId &&
+      (adjTile.type === 'master' || adjTile.type === 'dungeon' || adjTile.type === 'monster')) {
+      return true;
+    }
+  }
+
+  return false;
 }

@@ -1,9 +1,11 @@
 <script lang="ts">
   import { gameState, playerId } from '$lib/stores/game-store';
-  import type { RolledDice, Crest } from '$lib/game/types';
+  import { getSummonableCombinations } from '$lib/game/dice';
+  import type { RolledDice, CrestType, SummonableCombination } from '$lib/game/types';
   
   $: player = $gameState?.players.find(p => p.id === $playerId);
   $: hand = player?.hand || [];
+  $: summonableCombinations = getSummonableCombinations(hand);
 
   let selectedDice: RolledDice | null = null;
 
@@ -15,58 +17,40 @@
     selectedDice = null;
   }
 
-  function getFaceIcon(dice: RolledDice): string {
-    switch (dice.face.type) {
-      case 'monster':
-        return '🐉';
-      case 'movement':
-        return '👣';
-      case 'summon':
-        return '✨';
-      case 'magic':
-        return '📜';
-      case 'trap':
-        return '🪤';
-      default:
-        return '🎲';
-    }
+  function getCrestIcon(crestType: CrestType): string {
+    const icons: Record<CrestType, string> = {
+      summon: '⭐',
+      attack: '⚔️',
+      defense: '🛡️',
+      movement: '➡️',
+      magic: '✨',
+      trap: '💣'
+    };
+    return icons[crestType];
   }
 
-  function getFaceTypeText(type: string): string {
-    const texts: Record<string, string> = {
-      monster: 'モンスター',
-      movement: '移動',
-      summon: '召喚クレスト',
+  function getCrestText(crestType: CrestType): string {
+    const texts: Record<CrestType, string> = {
+      summon: '召喚',
+      attack: '攻撃',
+      defense: '防御',
+      movement: '進行',
       magic: '魔法',
       trap: '罠'
     };
-    return texts[type] || type;
+    return texts[crestType];
   }
 
-  function getCrestText(crest?: Crest): string {
-    if (!crest) return '';
-    const texts: Record<Crest, string> = {
-      dark: '闇',
-      light: '光',
-      fire: '炎',
-      water: '水',
-      earth: '地',
-      wind: '風'
+  function getCrestColor(crestType: CrestType): string {
+    const colors: Record<CrestType, string> = {
+      summon: '#ffd700',
+      attack: '#ff4444',
+      defense: '#4444ff',
+      movement: '#44ff44',
+      magic: '#ff44ff',
+      trap: '#888888'
     };
-    return texts[crest];
-  }
-
-  function getCrestColor(crest?: Crest): string {
-    if (!crest) return '#666';
-    const colors: Record<Crest, string> = {
-      dark: '#6a1b9a',
-      light: '#ffd54f',
-      fire: '#f4511e',
-      water: '#039be5',
-      earth: '#6d4c41',
-      wind: '#66bb6a'
-    };
-    return colors[crest];
+    return colors[crestType];
   }
 </script>
 
@@ -76,28 +60,38 @@
     <span class="hand-count">{hand.length} 枚</span>
   </div>
   
+  <!-- 召喚可能な組み合わせ表示 -->
+  {#if summonableCombinations.length > 0}
+    <div class="summonable-section">
+      <h4>召喚可能:</h4>
+      {#each summonableCombinations as combo}
+        <div class="summon-combo">
+          <span class="combo-icon">⭐{combo.summonNumber}</span>
+          <span class="combo-count">×{combo.diceIds.length}</span>
+        </div>
+      {/each}
+    </div>
+  {/if}
+  
   <div class="dice-grid">
     {#if hand.length === 0}
       <p class="empty">ダイスをロールしてください</p>
     {:else}
-      {#each hand as dice, i}
+      {#each hand as rolledDice, i}
         <button 
           class="dice-card" 
-          on:click={() => selectDice(dice)}
+          on:click={() => selectDice(rolledDice)}
           title="クリックで詳細表示"
+          style="border-color: {getCrestColor(rolledDice.rolledFace.crestType)}"
         >
-          <div class="dice-icon">{getFaceIcon(dice)}</div>
-          <div class="dice-type">{getFaceTypeText(dice.face.type)}</div>
-          {#if dice.face.level}
-            <div class="dice-level">Lv.{dice.face.level}</div>
+          <div class="dice-level">Lv.{rolledDice.dice.level}</div>
+          <div class="dice-icon">{getCrestIcon(rolledDice.rolledFace.crestType)}</div>
+          <div class="dice-type">{getCrestText(rolledDice.rolledFace.crestType)}</div>
+          {#if rolledDice.rolledFace.crestType === 'summon'}
+            <div class="summon-number">☆{rolledDice.rolledFace.summonNumber}</div>
           {/if}
-          {#if dice.face.crest}
-            <div 
-              class="dice-crest" 
-              style="background-color: {getCrestColor(dice.face.crest)}"
-            >
-              {getCrestText(dice.face.crest)}
-            </div>
+          {#if rolledDice.rolledFace.multiplier && rolledDice.rolledFace.multiplier > 1}
+            <div class="multiplier">×{rolledDice.rolledFace.multiplier}</div>
           {/if}
         </button>
       {/each}
@@ -112,54 +106,58 @@
       <button class="close-btn" on:click={closeDetail}>×</button>
       
       <div class="detail-header">
-        <div class="detail-icon">{getFaceIcon(selectedDice)}</div>
-        <h2>{getFaceTypeText(selectedDice.face.type)}</h2>
+        <div class="detail-icon">{getCrestIcon(selectedDice.rolledFace.crestType)}</div>
+        <h2>{getCrestText(selectedDice.rolledFace.crestType)}</h2>
+        <div class="dice-level-large">Lv.{selectedDice.dice.level}</div>
       </div>
 
       <div class="detail-body">
-        {#if selectedDice.face.type === 'monster'}
+        <div class="detail-row">
+          <span class="label">ダイスレベル:</span>
+          <span class="value">Lv.{selectedDice.dice.level}</span>
+        </div>
+
+        {#if selectedDice.rolledFace.crestType === 'summon'}
           <div class="detail-row">
-            <span class="label">レベル:</span>
-            <span class="value">Lv.{selectedDice.face.level}</span>
-          </div>
-          <div class="detail-row">
-            <span class="label">属性:</span>
-            <span 
-              class="value crest-badge" 
-              style="background-color: {getCrestColor(selectedDice.face.crest)}"
-            >
-              {getCrestText(selectedDice.face.crest)}
-            </span>
-          </div>
-          <div class="detail-description">
-            このダイスを使用してレベル{selectedDice.face.level}の{getCrestText(selectedDice.face.crest)}属性モンスターを召喚できます。
-          </div>
-        {:else if selectedDice.face.type === 'movement'}
-          <div class="detail-description">
-            このダイスを使用してダンジョンパスを1マス延長できます。
-          </div>
-        {:else if selectedDice.face.type === 'summon'}
-          <div class="detail-row">
-            <span class="label">クレスト:</span>
-            <span 
-              class="value crest-badge" 
-              style="background-color: {getCrestColor(selectedDice.face.crest)}"
-            >
-              {getCrestText(selectedDice.face.crest)}
-            </span>
-          </div>
-          <div class="detail-description">
-            このクレストを使用して{getCrestText(selectedDice.face.crest)}属性のモンスターを召喚できます。
-          </div>
-        {:else if selectedDice.face.type === 'magic'}
-          <div class="detail-description">
-            魔法カードとして使用できます。
-          </div>
-        {:else if selectedDice.face.type === 'trap'}
-          <div class="detail-description">
-            罠カードとして使用できます。
+            <span class="label">召喚数字:</span>
+            <span class="value">☆{selectedDice.rolledFace.summonNumber}</span>
           </div>
         {/if}
+
+        {#if selectedDice.rolledFace.multiplier && selectedDice.rolledFace.multiplier > 1}
+          <div class="detail-row">
+            <span class="label">倍率:</span>
+            <span class="value">×{selectedDice.rolledFace.multiplier}</span>
+          </div>
+        {/if}
+
+        <div class="monster-info">
+          <h3>モンスター情報</h3>
+          <div class="detail-row">
+            <span class="label">攻撃力:</span>
+            <span class="value">{selectedDice.dice.monster?.attack}</span>
+          </div>
+          <div class="detail-row">
+            <span class="label">防御力:</span>
+            <span class="value">{selectedDice.dice.monster?.defense}</span>
+          </div>
+        </div>
+
+        <div class="detail-description">
+          {#if selectedDice.rolledFace.crestType === 'summon'}
+            同じ☆{selectedDice.rolledFace.summonNumber}が2つ以上あれば召喚できます。
+          {:else if selectedDice.rolledFace.crestType === 'movement'}
+            モンスターの移動に使用できます。
+          {:else if selectedDice.rolledFace.crestType === 'attack'}
+            攻撃時に使用します。
+          {:else if selectedDice.rolledFace.crestType === 'defense'}
+            防御時に使用します。
+          {:else if selectedDice.rolledFace.crestType === 'magic'}
+            特殊能力の発動に使用します。
+          {:else if selectedDice.rolledFace.crestType === 'trap'}
+            罠の発動に使用します。
+          {/if}
+        </div>
       </div>
     </div>
   </div>
@@ -180,7 +178,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 15px;
+    margin-bottom: 12px;
     padding-bottom: 10px;
     border-bottom: 2px solid rgba(255, 255, 255, 0.2);
   }
@@ -197,6 +195,35 @@
     border-radius: 12px;
     font-size: 0.9rem;
     font-weight: bold;
+  }
+
+  .summonable-section {
+    background: rgba(255, 215, 0, 0.2);
+    padding: 10px;
+    border-radius: 8px;
+    margin-bottom: 12px;
+    border: 2px solid gold;
+  }
+
+  .summonable-section h4 {
+    margin: 0 0 8px 0;
+    font-size: 0.9rem;
+    color: gold;
+  }
+
+  .summon-combo {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: rgba(255, 255, 255, 0.2);
+    padding: 5px 10px;
+    border-radius: 8px;
+    margin-right: 8px;
+    font-weight: bold;
+  }
+
+  .combo-icon {
+    font-size: 1.1rem;
   }
 
   .dice-grid {
@@ -234,7 +261,7 @@
   .dice-card {
     aspect-ratio: 0.8;
     background: rgba(255, 255, 255, 0.2);
-    border: 2px solid rgba(255, 255, 255, 0.3);
+    border: 3px solid;
     border-radius: 8px;
     display: flex;
     flex-direction: column;
@@ -245,13 +272,24 @@
     cursor: pointer;
     transition: all 0.2s;
     color: white;
+    position: relative;
   }
 
   .dice-card:hover {
     transform: scale(1.05);
     background: rgba(255, 255, 255, 0.3);
-    border-color: rgba(255, 255, 255, 0.5);
     box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+  }
+
+  .dice-level {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    font-size: 0.7rem;
+    background: rgba(0, 0, 0, 0.5);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: bold;
   }
 
   .dice-icon {
@@ -264,16 +302,17 @@
     opacity: 0.9;
   }
 
-  .dice-level {
-    font-size: 0.7rem;
-    background: rgba(255, 255, 255, 0.3);
-    padding: 2px 6px;
+  .summon-number {
+    font-size: 1rem;
+    background: rgba(255, 215, 0, 0.5);
+    padding: 3px 8px;
     border-radius: 4px;
     font-weight: bold;
   }
 
-  .dice-crest {
-    font-size: 0.65rem;
+  .multiplier {
+    font-size: 0.7rem;
+    background: rgba(255, 100, 100, 0.7);
     padding: 2px 6px;
     border-radius: 4px;
     font-weight: bold;
@@ -303,12 +342,14 @@
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     border-radius: 16px;
     padding: 30px;
-    max-width: 400px;
+    max-width: 450px;
     width: 90%;
     color: white;
     position: relative;
     animation: slideUp 0.3s;
     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    max-height: 90vh;
+    overflow-y: auto;
   }
 
   @keyframes slideUp {
@@ -350,8 +391,16 @@
   }
 
   .detail-header h2 {
-    margin: 0;
+    margin: 0 0 10px 0;
     font-size: 1.8rem;
+  }
+
+  .dice-level-large {
+    font-size: 1.2rem;
+    background: rgba(255, 255, 255, 0.2);
+    padding: 5px 15px;
+    border-radius: 20px;
+    display: inline-block;
   }
 
   .detail-body {
@@ -364,8 +413,8 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 15px;
-    padding-bottom: 15px;
+    margin-bottom: 12px;
+    padding-bottom: 12px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.2);
   }
 
@@ -377,17 +426,24 @@
 
   .label {
     font-weight: bold;
-    font-size: 1.1rem;
+    font-size: 1rem;
   }
 
   .value {
-    font-size: 1.3rem;
+    font-size: 1.2rem;
     font-weight: bold;
   }
 
-  .crest-badge {
-    padding: 5px 15px;
-    border-radius: 20px;
+  .monster-info {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 2px solid rgba(255, 255, 255, 0.3);
+  }
+
+  .monster-info h3 {
+    margin: 0 0 15px 0;
+    font-size: 1.2rem;
+    text-align: center;
   }
 
   .detail-description {
