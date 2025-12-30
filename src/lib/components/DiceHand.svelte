@@ -1,13 +1,42 @@
 <script lang="ts">
   import { gameState, playerId } from '$lib/stores/game-store';
-  import { getSummonableCombinations } from '$lib/game/dice';
-  import type { RolledDice, CrestType, SummonableCombination } from '$lib/game/types';
+  import { getSummonableCombinations, getSummonableGroups } from '$lib/game/dice';
+  import type { RolledDice, CrestType, SummonableCombination, SummonNumber } from '$lib/game/types';
+  
+  export let selectedDiceId: string | null = null;
+  export let onDiceSelect: (diceId: string) => void = () => {};
   
   $: player = $gameState?.players.find(p => p.id === $playerId);
   $: hand = player?.hand || [];
   $: summonableCombinations = getSummonableCombinations(hand);
+  $: summonableGroups = getSummonableGroups(hand);
+  $: canSummon = $gameState?.phase === 'summon';
 
   let selectedDice: RolledDice | null = null;
+
+  function handleDiceClick(dice: RolledDice, event: MouseEvent) {
+    // 右クリックは詳細表示
+    if (event.button === 2) {
+      event.preventDefault();
+      selectDice(dice);
+      return;
+    }
+
+    // 召喚フェーズで召喚可能なダイスの場合は選択
+    if (canSummon && dice.rolledFace.crestType === 'summon') {
+      const summonNumber = dice.rolledFace.summonNumber!;
+      if (summonableGroups.has(summonNumber)) {
+        onDiceSelect(dice.dice.id);
+      }
+    } else {
+      selectDice(dice);
+    }
+  }
+
+  function handleDiceRightClick(dice: RolledDice, event: MouseEvent) {
+    event.preventDefault();
+    selectDice(dice);
+  }
 
   function selectDice(dice: RolledDice) {
     selectedDice = dice;
@@ -15,6 +44,17 @@
 
   function closeDetail() {
     selectedDice = null;
+  }
+
+  function isDiceSelected(diceId: string): boolean {
+    return selectedDiceId === diceId;
+  }
+
+  function isDiceSummonable(dice: RolledDice): boolean {
+    if (!canSummon) return false;
+    if (dice.rolledFace.crestType !== 'summon') return false;
+    const summonNumber = dice.rolledFace.summonNumber!;
+    return summonableGroups.has(summonNumber);
   }
 
   function getCrestIcon(crestType: CrestType): string {
@@ -61,15 +101,21 @@
   </div>
   
   <!-- 召喚可能な組み合わせ表示 -->
-  {#if summonableCombinations.length > 0}
+  {#if summonableGroups.size > 0}
     <div class="summonable-section">
       <h4>召喚可能:</h4>
-      {#each summonableCombinations as combo}
+      {#each Array.from(summonableGroups.entries()) as [summonNumber, diceList]}
         <div class="summon-combo">
-          <span class="combo-icon">⭐{combo.summonNumber}</span>
-          <span class="combo-count">×{combo.diceIds.length}</span>
+          <span class="combo-icon">⭐{summonNumber}</span>
+          <span class="combo-count">×{diceList.length}</span>
         </div>
       {/each}
+    </div>
+  {/if}
+
+  {#if canSummon && selectedDiceId}
+    <div class="selection-info">
+      召喚するダイスを選択中
     </div>
   {/if}
   
@@ -78,12 +124,16 @@
       <p class="empty">ダイスをロールしてください</p>
     {:else}
       {#each hand as rolledDice, i}
+        {@const isSelected = isDiceSelected(rolledDice.dice.id)}
+        {@const isSummonable = isDiceSummonable(rolledDice)}
         <button 
-          class="dice-card" 
-          on:click={() => selectDice(rolledDice)}
-          title="クリックで詳細表示"
+          class="dice-card {isSelected ? 'selected' : ''} {isSummonable ? 'selectable' : ''}"
+          on:click={(e) => handleDiceClick(rolledDice, e)}
+          on:contextmenu={(e) => handleDiceRightClick(rolledDice, e)}
+          title={isSummonable ? 'クリックで選択 / 右クリックで詳細' : '右クリックで詳細表示'}
           style="border-color: {getCrestColor(rolledDice.rolledFace.crestType)}"
         >
+          <!-- ダイスカードの内容は同じ -->
           <div class="dice-level">Lv.{rolledDice.dice.level}</div>
           <div class="dice-icon">{getCrestIcon(rolledDice.rolledFace.crestType)}</div>
           <div class="dice-type">{getCrestText(rolledDice.rolledFace.crestType)}</div>
@@ -92,6 +142,9 @@
           {/if}
           {#if rolledDice.rolledFace.multiplier && rolledDice.rolledFace.multiplier > 1}
             <div class="multiplier">×{rolledDice.rolledFace.multiplier}</div>
+          {/if}
+          {#if isSelected}
+            <div class="selected-badge">✓</div>
           {/if}
         </button>
       {/each}

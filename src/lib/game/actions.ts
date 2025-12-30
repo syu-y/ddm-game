@@ -1,6 +1,7 @@
-import type { GameState, GameAction, RolledDice, CrestType } from './types';
+import type { GameState, GameAction, RolledDice, CrestType, DeployedMonster } from './types';
 import { getCurrentPlayer } from './game-logic';
 import { rollDice } from './dice';
+import { canDeployAt, setTile } from './board';
 
 // ゲームアクションを処理
 export function processAction(state: GameState, action: GameAction, playerId: string): boolean {
@@ -12,6 +13,9 @@ export function processAction(state: GameState, action: GameAction, playerId: st
   switch (action.type) {
     case 'ROLL_DICE':
       return handleRollDice(state);
+
+    case 'SUMMON_MONSTER':
+      return handleSummonMonster(state, action.diceIds, action.position, playerId);
 
     case 'END_PHASE':
       return handleEndPhase(state);
@@ -69,6 +73,97 @@ function handleRollDice(state: GameState): boolean {
 
   // 次のフェーズへ
   state.phase = 'summon';
+
+  return true;
+}
+
+// モンスター召喚処理
+function handleSummonMonster(
+  state: GameState,
+  diceIds: string[],
+  position: import('./types').Position,
+  playerId: string
+): boolean {
+  if (state.phase !== 'summon') {
+    console.log('召喚フェーズではありません');
+    return false;
+  }
+
+  const player = getCurrentPlayer(state);
+
+  // 最低2つのダイスが必要
+  if (diceIds.length < 2) {
+    console.log('召喚には最低2つのダイスが必要です');
+    return false;
+  }
+
+  // 手札から該当するダイスを取得
+  const selectedDice = diceIds.map(id =>
+    player.hand.find(rd => rd.dice.id === id)
+  ).filter(rd => rd !== undefined) as RolledDice[];
+
+  if (selectedDice.length !== diceIds.length) {
+    console.log('指定されたダイスが手札にありません');
+    return false;
+  }
+
+  // すべて召喚クレストで、同じ数字か確認
+  const summonNumbers = selectedDice.map(rd => {
+    if (rd.rolledFace.crestType !== 'summon' || !rd.rolledFace.summonNumber) {
+      return null;
+    }
+    return rd.rolledFace.summonNumber;
+  });
+
+  if (summonNumbers.some(num => num === null)) {
+    console.log('すべて召喚クレストである必要があります');
+    return false;
+  }
+
+  const firstNumber = summonNumbers[0];
+  if (!summonNumbers.every(num => num === firstNumber)) {
+    console.log('すべて同じ召喚数字である必要があります');
+    return false;
+  }
+
+  // 配置可能な位置か確認
+  if (!canDeployAt(state.board, position, playerId)) {
+    console.log('その位置には配置できません');
+    return false;
+  }
+
+  // 最初のダイスをモンスターとして召喚
+  const summonedDice = selectedDice[0];
+  const deployedMonster: DeployedMonster = {
+    diceId: summonedDice.dice.id,
+    monster: summonedDice.dice.monster!,
+    level: summonedDice.dice.level,
+    position: position,
+    owner: playerId,
+    hp: summonedDice.dice.monster!.defense
+  };
+
+  // 盤面に配置
+  setTile(state.board, {
+    position: position,
+    type: 'monster',
+    owner: playerId,
+    deployedMonster: deployedMonster
+  });
+
+  // 使用したダイスを手札から削除
+  diceIds.forEach(id => {
+    const index = player.hand.findIndex(rd => rd.dice.id === id);
+    if (index !== -1) {
+      player.hand.splice(index, 1);
+    }
+  });
+
+  console.log(`モンスター召喚成功: ${deployedMonster.monster.name} (Lv${deployedMonster.level})`);
+  console.log(`  位置: (${position.x}, ${position.y})`);
+  console.log(`  攻撃力: ${deployedMonster.monster.attack}`);
+  console.log(`  防御力: ${deployedMonster.monster.defense}`);
+  console.log(`  使用したダイス: ${diceIds.length}個`);
 
   return true;
 }

@@ -123,3 +123,29 @@ export function getSummonableCombinations(hand: import('./types').RolledDice[]):
 
   return combinations;
 }
+
+// 召喚可能なダイスのリストを取得（同じ☆数字が2つ以上あるものをグループ化）
+export function getSummonableGroups(hand: import('./types').RolledDice[]): Map<import('./types').SummonNumber, import('./types').RolledDice[]> {
+  const summonDice = hand.filter(rd => rd.rolledFace.crestType === 'summon');
+
+  // 召喚数字ごとにグループ化
+  const groups = new Map<import('./types').SummonNumber, import('./types').RolledDice[]>();
+
+  summonDice.forEach(rd => {
+    const num = rd.rolledFace.summonNumber!;
+    if (!groups.has(num)) {
+      groups.set(num, []);
+    }
+    groups.get(num)!.push(rd);
+  });
+
+  // 2つ以上あるグループのみを返す
+  const result = new Map<import('./types').SummonNumber, import('./types').RolledDice[]>();
+  groups.forEach((diceList, summonNumber) => {
+    if (diceList.length >= 2) {
+      result.set(summonNumber, diceList);
+    }
+  });
+
+  return result;
+}
