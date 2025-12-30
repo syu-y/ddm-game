@@ -1,11 +1,12 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { createRoom, joinRoom } from '$lib/stores/game-store';
+  import { createRoom, joinRoom, quickMatch, cancelQuickMatch } from '$lib/stores/game-store';
 
   let name = '';
   let roomIdInput = '';
-  let mode: 'menu' | 'create' | 'join' = 'menu';
+  let mode: 'menu' | 'create' | 'join' | 'quick' = 'menu';
   let loading = false;
+  let matchmakingStatus = '対戦相手を探しています...';
 
   async function handleCreateRoom() {
     if (!name.trim()) {
@@ -43,6 +44,38 @@
       loading = false;
     }
   }
+
+  async function handleQuickMatch() {
+    if (!name.trim()) {
+      alert('名前を入力してください');
+      return;
+    }
+    
+    loading = true;
+    matchmakingStatus = '対戦相手を探しています...';
+    
+    try {
+      const roomId = await quickMatch(name);
+      goto(`/game/${roomId}`);
+    } catch (error) {
+      alert('マッチングに失敗しました');
+      loading = false;
+    }
+  }
+
+  function handleCancelQuickMatch() {
+    cancelQuickMatch();
+    loading = false;
+    mode = 'menu';
+  }
+
+  function backToMenu() {
+    if (loading && mode === 'quick') {
+      handleCancelQuickMatch();
+    } else {
+      mode = 'menu';
+    }
+  }
 </script>
 
 <div class="container">
@@ -50,12 +83,43 @@
 
   {#if mode === 'menu'}
     <div class="menu">
-      <button class="btn btn-primary" on:click={() => mode = 'create'}>
+      <button class="btn btn-primary" on:click={() => mode = 'quick'}>
+        ⚡ クイックマッチ
+      </button>
+      <button class="btn btn-secondary" on:click={() => mode = 'create'}>
         🎲 ルームを作成
       </button>
-      <button class="btn btn-secondary" on:click={() => mode = 'join'}>
+      <button class="btn btn-tertiary" on:click={() => mode = 'join'}>
         🚪 ルームに参加
       </button>
+    </div>
+  {:else if mode === 'quick'}
+    <div class="form">
+      <h2>クイックマッチ</h2>
+      {#if !loading}
+        <input
+          type="text"
+          placeholder="あなたの名前"
+          bind:value={name}
+          maxlength="20"
+        />
+        <div class="buttons">
+          <button class="btn btn-primary" on:click={handleQuickMatch}>
+            マッチング開始
+          </button>
+          <button class="btn btn-back" on:click={backToMenu}>
+            戻る
+          </button>
+        </div>
+      {:else}
+        <div class="matchmaking">
+          <div class="spinner"></div>
+          <p>{matchmakingStatus}</p>
+          <button class="btn btn-back" on:click={handleCancelQuickMatch}>
+            キャンセル
+          </button>
+        </div>
+      {/if}
     </div>
   {:else if mode === 'create'}
     <div class="form">
@@ -70,7 +134,7 @@
         <button class="btn btn-primary" on:click={handleCreateRoom} disabled={loading}>
           {loading ? '作成中...' : '作成する'}
         </button>
-        <button class="btn btn-back" on:click={() => mode = 'menu'} disabled={loading}>
+        <button class="btn btn-back" on:click={backToMenu} disabled={loading}>
           戻る
         </button>
       </div>
@@ -94,7 +158,7 @@
         <button class="btn btn-primary" on:click={handleJoinRoom} disabled={loading}>
           {loading ? '参加中...' : '参加する'}
         </button>
-        <button class="btn btn-back" on:click={() => mode = 'menu'} disabled={loading}>
+        <button class="btn btn-back" on:click={backToMenu} disabled={loading}>
           戻る
         </button>
       </div>
@@ -124,7 +188,7 @@
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
-    min-width: 300px;
+    min-width: 320px;
   }
 
   .form {
@@ -199,6 +263,16 @@
     box-shadow: 0 4px 12px rgba(245, 87, 108, 0.4);
   }
 
+  .btn-tertiary {
+    background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+    color: white;
+  }
+
+  .btn-tertiary:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(79, 172, 254, 0.4);
+  }
+
   .btn-back {
     background: #e0e0e0;
     color: #666;
@@ -206,5 +280,31 @@
 
   .btn-back:hover:not(:disabled) {
     background: #d0d0d0;
+  }
+
+  .matchmaking {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.5rem;
+    padding: 2rem 0;
+  }
+
+  .matchmaking p {
+    color: #666;
+    font-size: 1.1rem;
+  }
+
+  .spinner {
+    width: 50px;
+    height: 50px;
+    border: 4px solid #e0e0e0;
+    border-top-color: #667eea;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
   }
 </style>

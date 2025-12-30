@@ -4,6 +4,8 @@ import type { GameState, GameAction } from '$lib/game/types';
 export interface ClientToServerEvents {
   'create-room': (playerName: string, callback: (roomId: string) => void) => void;
   'join-room': (roomId: string, playerName: string, callback: (success: boolean) => void) => void;
+  'quick-match': (playerName: string, callback: () => void) => void;
+  'cancel-quick-match': () => void;
   'game-action': (action: GameAction) => void;
   'leave-room': () => void;
 }
@@ -15,4 +17,5 @@ export interface ServerToClientEvents {
   'player-left': () => void;
   'error': (message: string) => void;
   'game-start': () => void;
+  'match-found': (roomId: string) => void;
 }

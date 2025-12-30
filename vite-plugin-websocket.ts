@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
+
 import type { ViteDevServer, Plugin } from 'vite';
 import { Server as SocketIOServer } from 'socket.io';
 import { v4 as uuidv4 } from 'uuid';
@@ -8,6 +10,8 @@ import type { GameState, GameAction } from './src/lib/game/types';
 interface ClientToServerEvents {
   'create-room': (playerName: string, callback: (roomId: string) => void) => void;
   'join-room': (roomId: string, playerName: string, callback: (success: boolean) => void) => void;
+  'quick-match': (playerName: string, callback: (roomId: string) => void) => void;
+  'cancel-quick-match': () => void;
   'game-action': (action: GameAction) => void;
   'leave-room': () => void;
 }
@@ -18,6 +22,7 @@ interface ServerToClientEvents {
   'player-left': () => void;
   'error': (message: string) => void;
   'game-start': () => void;
+  'match-found': (roomId: string) => void;
 }
 
 interface Room {
@@ -26,7 +31,13 @@ interface Room {
   gameState?: GameState;
 }
 
+interface MatchmakingPlayer {
+  socketId: string;
+  name: string;
+}
+
 const rooms = new Map<string, Room>();
+const matchmakingQueue: MatchmakingPlayer[] = [];
 
 export const webSocketServer: Plugin = {
   name: 'webSocketServer',
@@ -81,35 +92,98 @@ export const webSocketServer: Plugin = {
         socket.join(roomId);
         callback(true);
 
-        // 対戦相手に通知
         socket.to(roomId).emit('player-joined', playerName);
 
-        // ゲーム開始（2人揃った）
         if (room.players.length === 2) {
-          console.log(`🎮 ゲーム開始: ${roomId}`);
-          console.log(`プレイヤー1: ${room.players[0].name} (${room.players[0].socketId})`);
-          console.log(`プレイヤー2: ${room.players[1].name} (${room.players[1].socketId})`);
-
-          // ゲーム状態を初期化
-          const [player1, player2] = room.players;
-          room.gameState = initializeGame(
-            roomId,
-            player1.socketId,
-            player1.name,
-            player2.socketId,
-            player2.name
-          );
-
-          // 両プレイヤーにゲーム開始を通知
-          io.to(roomId).emit('game-start');
-          console.log('✉️ game-start イベント送信');
-
-          // 両プレイヤーにゲーム状態を送信
-          io.to(roomId).emit('game-state', room.gameState);
-          console.log('✉️ game-state イベント送信');
+          startGame(io, room);
         }
 
         console.log(`👥 ルーム参加: ${roomId} by ${playerName}`);
+      });
+
+      // クイックマッチ
+      socket.on('quick-match', (playerName, callback) => {
+        console.log(`🎯 クイックマッチ要求: ${playerName} (${socket.id})`);
+
+        // 既にキューにいないか確認
+        const existingIndex = matchmakingQueue.findIndex(p => p.socketId === socket.id);
+        if (existingIndex !== -1) {
+          console.log(`⚠️ 既にキューに存在: ${socket.id}`);
+          return;
+        }
+
+        // キューに追加
+        matchmakingQueue.push({ socketId: socket.id, name: playerName });
+        console.log(`📋 マッチングキュー: ${matchmakingQueue.length}人待機中`);
+
+        // 少し遅延させてマッチング処理（ソケットの準備完了を待つ）
+        setTimeout(() => {
+          // 2人揃ったらマッチング
+          if (matchmakingQueue.length >= 2) {
+            const player1 = matchmakingQueue.shift()!;
+            const player2 = matchmakingQueue.shift()!;
+
+            console.log(`🔍 マッチング処理開始`);
+            console.log(`  Player1: ${player1.name} (${player1.socketId})`);
+            console.log(`  Player2: ${player2.name} (${player2.socketId})`);
+
+            // ルームを作成
+            const roomId = uuidv4().substring(0, 8);
+            const room: Room = {
+              id: roomId,
+              players: [player1, player2]
+            };
+            rooms.set(roomId, room);
+
+            // 両プレイヤーをルームに参加させる
+            const socket1 = io.sockets.sockets.get(player1.socketId);
+            const socket2 = io.sockets.sockets.get(player2.socketId);
+
+            console.log(`  Socket1存在: ${!!socket1}`);
+            console.log(`  Socket2存在: ${!!socket2}`);
+
+            if (socket1 && socket2) {
+              socket1.join(roomId);
+              socket2.join(roomId);
+
+              console.log(`  両プレイヤーをルーム ${roomId} に追加`);
+
+              // マッチング成功を通知
+              console.log(`  → Player1に match-found 送信`);
+              socket1.emit('match-found', roomId);
+
+              console.log(`  → Player2に match-found 送信`);
+              socket2.emit('match-found', roomId);
+
+              console.log(`✨ マッチング成功: ${roomId}`);
+              console.log(`   Player1: ${player1.name} (${player1.socketId})`);
+              console.log(`   Player2: ${player2.name} (${player2.socketId})`);
+
+              // ゲーム開始
+              startGame(io, room);
+            } else {
+              console.error(`❌ ソケットが見つかりません`);
+              if (!socket1) console.error(`  Player1のソケット ${player1.socketId} が存在しません`);
+              if (!socket2) console.error(`  Player2のソケット ${player2.socketId} が存在しません`);
+
+              // ソケットが見つからない場合、キューに戻す
+              if (!socket1) matchmakingQueue.unshift(player1);
+              if (!socket2) matchmakingQueue.unshift(player2);
+            }
+          } else {
+            // まだマッチング相手が見つからない
+            console.log(`⏳ マッチング待機中: ${playerName}`);
+          }
+        }, 100); // 100ms遅延
+      });
+
+      // クイックマッチキャンセル
+      socket.on('cancel-quick-match', () => {
+        const index = matchmakingQueue.findIndex(p => p.socketId === socket.id);
+        if (index !== -1) {
+          matchmakingQueue.splice(index, 1);
+          console.log(`❌ マッチングキャンセル: ${socket.id}`);
+        }
       });
 
       // ゲームアクション
@@ -120,11 +194,9 @@ export const webSocketServer: Plugin = {
         const room = rooms.get(roomId);
         if (!room || !room.gameState) return;
 
-        // アクションを処理
         const success = processAction(room.gameState, action, socket.id);
 
         if (success) {
-          // 更新されたゲーム状態を両プレイヤーに送信
           io.to(roomId).emit('game-state', room.gameState);
           console.log(`アクション処理: ${action.type}`);
         } else {
@@ -141,8 +213,38 @@ export const webSocketServer: Plugin = {
       // 切断
       socket.on('disconnect', () => {
         console.log('❌ クライアント切断:', socket.id);
+
+        // マッチングキューから削除
+        const queueIndex = matchmakingQueue.findIndex(p => p.socketId === socket.id);
+        if (queueIndex !== -1) {
+          matchmakingQueue.splice(queueIndex, 1);
+          console.log(`🗑️ キューから削除: ${socket.id}`);
+        }
+
         leaveAllRooms(socket.id);
       });
+
+      // ヘルパー関数: ゲーム開始
+      function startGame(io: SocketIOServer, room: Room) {
+        console.log(`🎮 ゲーム開始: ${room.id}`);
+        console.log(`プレイヤー1: ${room.players[0].name} (${room.players[0].socketId})`);
+        console.log(`プレイヤー2: ${room.players[1].name} (${room.players[1].socketId})`);
+
+        const [player1, player2] = room.players;
+        room.gameState = initializeGame(
+          room.id,
+          player1.socketId,
+          player1.name,
+          player2.socketId,
+          player2.name
+        );
+
+        io.to(room.id).emit('game-start');
+        console.log('✉️ game-start イベント送信');
+
+        io.to(room.id).emit('game-state', room.gameState);
+        console.log('✉️ game-state イベント送信');
+      }
 
       // ヘルパー関数: socketIdからルームIDを検索
       function findRoomBySocketId(socketId: string): string | null {
@@ -161,12 +263,10 @@ export const webSocketServer: Plugin = {
           if (playerIndex !== -1) {
             room.players.splice(playerIndex, 1);
 
-            // ルームが空になったら削除
             if (room.players.length === 0) {
               rooms.delete(roomId);
               console.log(`🗑️ ルーム削除: ${roomId}`);
             } else {
-              // 残りのプレイヤーに通知
               io.to(roomId).emit('player-left');
             }
           }

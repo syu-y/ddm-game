@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { writable, get } from 'svelte/store';
 import type { GameState, GameAction, RolledDice } from '$lib/game/types';
 import { io, type Socket } from 'socket.io-client';
@@ -21,6 +22,10 @@ export const rolledResults = writable<RolledDice[]>([]);
 let rollAnimationTimer: number | null = null;
 let previousHandSize = 0;
 
+// クイックマッチ用のPromiseコールバック
+let quickMatchResolve: ((roomId: string) => void) | null = null;
+let quickMatchReject: ((error: Error) => void) | null = null;
+
 // Socket.io接続
 export function connectSocket() {
   const socketInstance = io('http://localhost:5173');
@@ -28,7 +33,7 @@ export function connectSocket() {
   socketInstance.on('connect', () => {
     console.log('WebSocket接続成功');
     connectionStatus.set('connected');
-    playerId.set(socketInstance.id);
+    playerId.set(socketInstance.id ? socketInstance.id : null);
   });
 
   socketInstance.on('disconnect', () => {
@@ -36,7 +41,7 @@ export function connectSocket() {
     connectionStatus.set('disconnected');
   });
 
-  socketInstance.on('game-state', (state) => {
+  socketInstance.on('game-state', (state: GameState) => {
     console.log('ゲーム状態更新:', state);
 
     const currentPlayerId = get(playerId);
@@ -77,6 +82,18 @@ export function connectSocket() {
     alert(`エラー: ${message}`);
   });
 
+  // match-foundイベントリスナー（クイックマッチ用）
+  socketInstance.on('match-found', (matchedRoomId) => {
+    console.log(`✨ クライアント: match-found受信 - ${matchedRoomId}`);
+    roomId.set(matchedRoomId);
+
+    if (quickMatchResolve) {
+      quickMatchResolve(matchedRoomId);
+      quickMatchResolve = null;
+      quickMatchReject = null;
+    }
+  });
+
   socket.set(socketInstance);
   return socketInstance;
 }
@@ -86,7 +103,7 @@ export async function createRoom(name: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const socketInstance = connectSocket();
 
-    socketInstance.emit('create-room', name, (newRoomId) => {
+    socketInstance.emit('create-room', name, (newRoomId: string) => {
       roomId.set(newRoomId);
       playerName.set(name);
       console.log(`ルーム作成成功: ${newRoomId}`);
@@ -100,7 +117,7 @@ export async function joinRoom(id: string, name: string): Promise<boolean> {
   return new Promise((resolve) => {
     const socketInstance = connectSocket();
 
-    socketInstance.emit('join-room', id, name, (success) => {
+    socketInstance.emit('join-room', id, name, (success: boolean) => {
       if (success) {
         roomId.set(id);
         playerName.set(name);
@@ -109,6 +126,44 @@ export async function joinRoom(id: string, name: string): Promise<boolean> {
       resolve(success);
     });
   });
+}
+
+// クイックマッチ
+export async function quickMatch(name: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    // Promiseのコールバックを保存
+    quickMatchResolve = resolve;
+    quickMatchReject = reject;
+
+    const socketInstance = connectSocket();
+
+    // プレイヤー名を保存
+    playerName.set(name);
+
+    // クイックマッチ要求を送信
+    console.log('クライアント: クイックマッチ要求送信 -', name);
+    socketInstance.emit('quick-match', name, () => {
+      console.log('クライアント: クイックマッチ要求がサーバーに到達');
+    });
+
+    // タイムアウト処理（180秒）
+    setTimeout(() => {
+      if (quickMatchReject) {
+        quickMatchReject(new Error('マッチングがタイムアウトしました'));
+        quickMatchResolve = null;
+        quickMatchReject = null;
+      }
+    }, 180000);
+  });
+}
+
+// クイックマッチキャンセル
+export function cancelQuickMatch() {
+  const currentSocket = get(socket);
+  if (currentSocket) {
+    currentSocket.emit('cancel-quick-match');
+    console.log('クイックマッチキャンセル');
+  }
 }
 
 // ゲームアクションを送信
