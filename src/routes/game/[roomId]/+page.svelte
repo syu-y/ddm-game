@@ -8,12 +8,15 @@
     gameStarted, 
     connectionStatus, 
     playerName, 
-    playerId 
+    playerId,
+    isRolling,
+    rolledResults
   } from '$lib/stores/game-store';
   import GameBoard from '$lib/components/GameBoard.svelte';
   import PlayerInfo from '$lib/components/PlayerInfo.svelte';
   import DiceHand from '$lib/components/DiceHand.svelte';
   import ActionPanel from '$lib/components/ActionPanel.svelte';
+  import DiceRollAnimation from '$lib/components/DiceRollAnimation.svelte';
 
   let roomIdParam = $page.params.roomId;
 
@@ -95,6 +98,11 @@
     </div>
   {/if}
 
+  <!-- ダイスロールアニメーション -->
+  {#if $isRolling && $rolledResults.length > 0}
+    <DiceRollAnimation results={$rolledResults} />
+  {/if}
+
   <!-- 接続状態インジケーター -->
   <div class="connection-status {$connectionStatus}">
     {$connectionStatus === 'connected' ? '🟢' : '🔴'} 
@@ -102,6 +110,7 @@
   </div>
 </div>
 
+<!-- スタイルは前と同じなので省略 -->
 <style>
   .game-container {
     width: 100vw;
@@ -152,7 +161,6 @@
     to { transform: rotate(360deg); }
   }
 
-  /* ゲームレイアウト */
   .game-layout {
     display: flex;
     flex-direction: column;
@@ -161,7 +169,6 @@
     gap: 12px;
   }
 
-  /* 上部エリア（プレイヤー情報 + 盤面） */
   .top-area {
     flex: 1;
     display: grid;
@@ -170,7 +177,6 @@
     min-height: 0;
   }
 
-  /* サイドパネル */
   .left-panel,
   .right-panel {
     display: flex;
@@ -190,7 +196,6 @@
     backdrop-filter: blur(10px);
   }
 
-  /* 盤面エリア */
   .board-area {
     display: flex;
     justify-content: center;
@@ -201,7 +206,6 @@
     padding: 10px;
   }
 
-  /* 相手の手札情報 */
   .opponent-hand-info {
     background: rgba(255, 255, 255, 0.1);
     backdrop-filter: blur(10px);
@@ -224,14 +228,12 @@
     border-radius: 8px;
   }
 
-  /* 下部エリア（アクションパネル） */
   .bottom-area {
     height: 140px;
     display: flex;
     justify-content: center;
   }
 
-  /* スクロールバーのスタイル */
   .left-panel::-webkit-scrollbar,
   .right-panel::-webkit-scrollbar {
     width: 6px;
@@ -266,7 +268,6 @@
     background: rgba(0, 128, 0, 0.7);
   }
 
-  /* レスポンシブ対応 */
   @media (max-width: 1600px) {
     .top-area {
       grid-template-columns: 280px 1fr 280px;

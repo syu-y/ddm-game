@@ -15,6 +15,13 @@ export interface Dice {
   owner: string;
 }
 
+// ロールされたダイス（手札用）
+export interface RolledDice {
+  diceId: string;
+  face: DiceFace;
+  owner: string;
+}
+
 // モンスター
 export interface Monster {
   id: string;
@@ -48,7 +55,7 @@ export interface Player {
   name: string;
   lifePoints: number;
   dicePool: Dice[];
-  hand: Dice[]; // 手札のダイス
+  hand: RolledDice[]; // 
   position: Position; // ダイスマスターの位置
 }
 

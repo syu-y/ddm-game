@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { writable, get } from 'svelte/store'; // get をインポート
-import type { GameState, GameAction } from '$lib/game/types';
+import { writable, get } from 'svelte/store';
+import type { GameState, GameAction, RolledDice } from '$lib/game/types';
 import { io, type Socket } from 'socket.io-client';
 import type { ClientToServerEvents, ServerToClientEvents } from '$lib/server/socket-types';
 
@@ -14,6 +14,10 @@ export const playerId = writable<string | null>(null);
 export const playerName = writable<string>('');
 export const connectionStatus = writable<'disconnected' | 'connecting' | 'connected'>('disconnected');
 export const gameStarted = writable<boolean>(false);
+
+// ダイスロールアニメーション用
+export const isRolling = writable<boolean>(false);
+export const rolledResults = writable<RolledDice[]>([]);
 
 // Socket.io接続
 export function connectSocket() {
@@ -100,9 +104,39 @@ export function sendGameAction(action: GameAction) {
   }
 }
 
-// ダイスロール
+// ダイスロール（アニメーション付き）
 export function rollDice() {
+  // アニメーション開始前に現在の手札をキャプチャ
+  const currentState = get(gameState);
+  const currentPlayer = currentState?.players.find(p => p.id === get(playerId));
+  const beforeHandCount = currentPlayer?.hand.length || 0;
+
+  // アニメーション開始
+  isRolling.set(true);
+
+  // サーバーにダイスロールを送信
   sendGameAction({ type: 'ROLL_DICE' });
+
+  // ゲーム状態の更新を監視
+  const unsubscribe = gameState.subscribe((state) => {
+    if (!state) return;
+
+    const player = state.players.find(p => p.id === get(playerId));
+    if (!player) return;
+
+    // 手札が増えたらアニメーション用の結果を設定
+    if (player.hand.length > beforeHandCount) {
+      const newDice = player.hand.slice(beforeHandCount);
+      rolledResults.set(newDice);
+
+      // アニメーション完了後にクリーンアップ
+      setTimeout(() => {
+        isRolling.set(false);
+        rolledResults.set([]);
+        unsubscribe();
+      }, 5000); // 5秒後にアニメーション終了
+    }
+  });
 }
 
 // ターン終了

@@ -1,4 +1,4 @@
-import type { GameState, GameAction, DiceFace } from './types';
+import type { GameState, GameAction, RolledDice } from './types';
 import { getCurrentPlayer } from './game-logic';
 import { rollDice } from './dice';
 
@@ -37,19 +37,26 @@ function handleRollDice(state: GameState): boolean {
 
   // 3つのダイスをロール
   const rollCount = Math.min(3, player.dicePool.length);
-  const rolledFaces: DiceFace[] = [];
+  const rolledDice: RolledDice[] = [];
 
   for (let i = 0; i < rollCount; i++) {
     const dice = player.dicePool.pop()!;
     const face = rollDice(dice);
-    rolledFaces.push(face);
 
-    // ロール結果をログ
-    console.log(`ダイスロール: ${face.type}`, face);
+    rolledDice.push({
+      diceId: dice.id,
+      face: face,
+      owner: player.id
+    });
+
+    console.log(`ダイスロール[${i + 1}]: ${face.type}`, face);
   }
 
-  // 手札に追加（実際にはダイスオブジェクトとして保持すべきだが、簡略化のため面だけ保持）
-  // TODO: 後で改善
+  // 手札に追加
+  player.hand.push(...rolledDice);
+
+  console.log(`手札に追加: ${rolledDice.length}個のダイス`);
+  console.log(`現在の手札: ${player.hand.length}枚`);
 
   // 次のフェーズへ
   state.phase = 'summon';
