@@ -3,7 +3,7 @@
 import type { ViteDevServer, Plugin } from 'vite';
 import { Server as SocketIOServer } from 'socket.io';
 import { v4 as uuidv4 } from 'uuid';
-import { initializeGame } from './src/lib/game/game-logic';
+import { createGame } from './src/lib/game/game-logic';
 import { processAction } from './src/lib/game/actions';
 import type { GameState, GameAction } from './src/lib/game/types';
 
@@ -231,12 +231,12 @@ export const webSocketServer: Plugin = {
         console.log(`プレイヤー2: ${room.players[1].name} (${room.players[1].socketId})`);
 
         const [player1, player2] = room.players;
-        room.gameState = initializeGame(
+        room.gameState = createGame(
           room.id,
-          player1.socketId,
           player1.name,
+          player2.name,
+          player1.socketId,
           player2.socketId,
-          player2.name
         );
 
         io.to(room.id).emit('game-start');

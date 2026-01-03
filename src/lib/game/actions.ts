@@ -1,7 +1,9 @@
-import type { GameState, GameAction, RolledDice, CrestType, DeployedMonster } from './types';
+/* eslint-disable @typescript-eslint/no-unused-vars */
+import type { GameState, GameAction, RolledDice, CrestType, DeployedMonster, Position, Tile } from './types';
 import { getCurrentPlayer } from './game-logic';
 import { rollDice } from './dice';
-import { canDeployAt, setTile } from './board';
+import { canDeployAt, isInBounds, setTile } from './board';
+import { EXPANSION_PATTERNS } from './dice-expansion';
 
 // ゲームアクションを処理
 export function processAction(state: GameState, action: GameAction, playerId: string): boolean {
@@ -127,10 +129,10 @@ function handleSummonMonster(
   }
 
   // 配置可能な位置か確認
-  if (!canDeployAt(state.board, position, playerId)) {
-    console.log('その位置には配置できません');
-    return false;
-  }
+  // if (!canDeployAt(state.board, position, playerId)) {
+  //   console.log('その位置には配置できません');
+  //   return false;
+  // }
 
   // 最初のダイスをモンスターとして召喚
   const summonedDice = selectedDice[0];
@@ -143,13 +145,68 @@ function handleSummonMonster(
     hp: summonedDice.dice.monster!.defense
   };
 
-  // 盤面に配置
-  setTile(state.board, {
+  // ダイスから展開パターンのインデックスを取得
+  const patternIndex = summonedDice.dice.expansionPattern;
+  const pattern = EXPANSION_PATTERNS[patternIndex];
+
+  if (!pattern) {
+    console.log(`展開パターン ${patternIndex} が存在しません`);
+    return false;
+  }
+
+  console.log(`使用する展開パターン: ${patternIndex}`);
+
+  // パターンを絶対座標に変換
+  const absolutePositions: Position[] = pattern.map(relativePos => ({
+    x: position.x + relativePos.x,
+    y: position.y + relativePos.y
+  }));
+
+  // すべての位置が有効か確認
+  for (const pos of absolutePositions) {
+    if (!isInBounds(pos)) {
+      console.log(`展開位置 (${pos.x}, ${pos.y}) が盤面外です`);
+      return false;
+    }
+
+    const tile = state.board[pos.y][pos.x];
+    const isCenter = (pos.x === position.x && pos.y === position.y);
+
+    // 中心以外のマスが配置可能か確認
+    if (!isCenter && !canExpandOnTile(tile, playerId)) {
+      console.log(`展開位置 (${pos.x}, ${pos.y}) に配置できません`);
+      return false;
+    }
+  }
+
+  const monster: DeployedMonster = {
+    diceId: summonedDice.dice.id,
+    monster: summonedDice.dice.monster,
+    level: summonedDice.dice.level,
     position: position,
-    type: 'monster',
     owner: playerId,
-    deployedMonster: deployedMonster
-  });
+    hp: summonedDice.dice.monster.hp
+  };
+
+  // 展開パターンに従ってダンジョンタイルを配置
+  for (const pos of absolutePositions) {
+    if (pos.x === position.x && pos.y === position.y) {
+      // 中心はモンスターとして配置
+      setTile(state.board, {
+        position: pos,
+        type: 'monster',
+        owner: playerId,
+        deployedMonster: monster
+      });
+    } else {
+      // 周辺はダンジョンタイルとして配置
+      setTile(state.board, {
+        position: pos,
+        type: 'dungeon',
+        owner: playerId
+      });
+    }
+  }
 
   // 使用したダイスを手札から削除
   diceIds.forEach(id => {
@@ -163,9 +220,22 @@ function handleSummonMonster(
   console.log(`  位置: (${position.x}, ${position.y})`);
   console.log(`  攻撃力: ${deployedMonster.monster.attack}`);
   console.log(`  防御力: ${deployedMonster.monster.defense}`);
+  console.log(`  HP: ${deployedMonster.hp}`);
   console.log(`  使用したダイス: ${diceIds.length}個`);
-
+  console.log(`  展開されたマス数: ${absolutePositions.length}個`);
   return true;
+}
+
+// 展開可能なマスか確認
+function canExpandOnTile(tile: Tile, playerId: string): boolean {
+  // 空きマスはOK
+  if (tile.type === 'empty') return true;
+
+  // 自分のダンジョンタイルはOK
+  if (tile.type === 'dungeon' && tile.owner === playerId) return true;
+
+  // それ以外（master, monster, 相手のダンジョン）はNG
+  return false;
 }
 
 // クレストをプールに追加

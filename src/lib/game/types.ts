@@ -1,18 +1,62 @@
-// クレストの種類
-export type CrestType = 'summon' | 'attack' | 'defense' | 'movement' | 'magic' | 'trap';
+// ゲームの型定義
 
-// 召喚クレストの数字（1-4）
+// 基本型
+export type DiceLevel = 1 | 2 | 3 | 4;
 export type SummonNumber = 1 | 2 | 3 | 4;
+export type CrestType = 'summon' | 'attack' | 'defense' | 'movement' | 'magic' | 'trap';
+export type GamePhase = 'roll' | 'summon' | 'movement' | 'battle' | 'end';
 
-// ダイスの面
-export interface DiceFace {
-  crestType: CrestType;
-  summonNumber?: SummonNumber; // 召喚クレストの場合のみ
-  multiplier?: number; // クレストの倍数（×2など）デフォルトは1
+// 位置
+export interface Position {
+  x: number;
+  y: number;
 }
 
-// ダイスのレベル
-export type DiceLevel = 1 | 2 | 3 | 4;
+// クレストの面
+export interface DiceFace {
+  crestType: CrestType;
+  summonNumber?: SummonNumber; // 召喚クレストの場合
+  multiplier?: number; // ×2など
+}
+
+// 特殊能力の種類
+export type AbilityType =
+  | 'FLYING' // 飛行
+  | 'TUNNEL' // トンネル
+  | 'TRON' // トロンの効果
+  | 'STAT_UP_ATK' // 攻撃力アップ
+  | 'STAT_UP_DEF' // 防御力アップ
+  | 'DAMAGE_REDUCE' // ダメージ軽減
+  | 'DESTROY' // 破壊効果
+  | 'HEAL' // 回復
+  | 'RANGE_ATTACK' // 遠隔攻撃/弓攻撃
+  | 'AUTO_WIN' // 自動勝利
+  | 'CONTROL'  // コントロール
+  | 'NEGATE' //防御
+  | 'SPECIAL'; // その他の特殊能力
+
+// 特殊能力
+export interface MonsterAbility {
+  type: AbilityType;
+  cost?: { // 発動コスト
+    magic?: number;
+    attack?: number;
+    defense?: number;
+    movement?: number;
+    trap?: number;
+  };
+  effect: string; // 効果の説明
+  value?: number; // 効果の数値（ダメージ、移動距離など）
+}
+
+// モンスター情報
+export interface MonsterInfo {
+  name: string;
+  attack: number;
+  defense: number;
+  hp: number; // 初期HP（通常は防御力と同じだが、一部モンスターは異なる）
+  abilities?: MonsterAbility[]; // 特殊能力のリスト
+}
 
 // ダイス
 export interface Dice {
@@ -20,37 +64,25 @@ export interface Dice {
   level: DiceLevel;
   faces: DiceFace[]; // 6面
   owner: string;
-  monster?: MonsterInfo; // このダイスのモンスター情報
+  monster: MonsterInfo;
+  expansionPattern: number; // 展開パターンのインデックス
 }
 
-// モンスター情報（ダイスに紐付く）
-export interface MonsterInfo {
-  name: string;
-  attack: number;
-  defense: number;
-}
-
-// ロールされたダイス（手札用）
+// ロール済みダイス
 export interface RolledDice {
-  dice: Dice; // ダイス全体の情報
-  rolledFace: DiceFace; // 出た面
+  dice: Dice;
+  rolledFace: DiceFace;
   owner: string;
 }
 
-// 盤面上のモンスター（展開済みダイス）
+// 盤面上のモンスター
 export interface DeployedMonster {
   diceId: string;
   monster: MonsterInfo;
   level: DiceLevel;
   position: Position;
   owner: string;
-  hp: number; // 現在のHP（初期値は defense）
-}
-
-// 盤面の座標
-export interface Position {
-  x: number;
-  y: number;
+  hp: number;
 }
 
 // マスの種類
@@ -58,21 +90,10 @@ export interface Tile {
   position: Position;
   type: 'empty' | 'dungeon' | 'monster' | 'master';
   owner?: string;
-  deployedMonster?: DeployedMonster; // 展開されたモンスター
+  deployedMonster?: DeployedMonster;
 }
 
-// プレイヤー
-export interface Player {
-  id: string;
-  name: string;
-  lifePoints: number; // ダンジョンマスターへの攻撃回数（3回で負け）
-  dicePool: Dice[]; // 未使用のダイス
-  hand: RolledDice[]; // 手札（ロールしたダイス）
-  position: Position; // ダンジョンマスターの位置
-  crests: CrestPool; // 溜まっているクレスト
-}
-
-// クレストプール（攻撃、防御、進行、魔法、罠を溜める）
+// クレストプール
 export interface CrestPool {
   attack: number;
   defense: number;
@@ -81,38 +102,49 @@ export interface CrestPool {
   trap: number;
 }
 
+// プレイヤー
+export interface Player {
+  id: string;
+  name: string;
+  crests: CrestPool; // 蓄積されるクレスト
+  dicePool: Dice[]; // ダイスプール（未ロール）
+  hand: RolledDice[]; // 手札（ロール済み）
+  masterPosition: Position;
+  masterHP: number;
+}
+
 // ゲーム状態
 export interface GameState {
-  id: string;
-  players: [Player, Player];
+  roomId: string;
+  players: Player[];
   board: Tile[][];
   currentTurn: string; // プレイヤーID
   phase: GamePhase;
-  winner?: string;
+  turnCount: number;
 }
-
-// ゲームフェーズ
-export type GamePhase =
-  | 'waiting'
-  | 'roll'
-  | 'summon'     // 召喚フェーズ
-  | 'movement'   // 移動フェーズ
-  | 'battle'     // 戦闘フェーズ
-  | 'end'
-  | 'gameover';
 
 // ゲームアクション
 export type GameAction =
   | { type: 'ROLL_DICE' }
-  | { type: 'SUMMON_MONSTER'; diceIds: string[]; position: Position } // 召喚（同じ数字のクレスト2つ以上使用）
-  | { type: 'MOVE_MONSTER'; monsterId: string; position: Position }
-  | { type: 'ATTACK'; attackerId: string; targetId: string }
-  | { type: 'END_PHASE' } // フェーズ終了
-  | { type: 'END_TURN' }  // ターン終了
-  | { type: 'SURRENDER' };
+  | { type: 'SUMMON_MONSTER'; diceIds: string[]; position: Position }
+  | { type: 'MOVE_MONSTER'; fromPosition: Position; toPosition: Position }
+  | { type: 'ATTACK_MONSTER'; attackerPosition: Position; targetPosition: Position }
+  | { type: 'END_PHASE' }
+  | { type: 'END_TURN' };
 
 // 召喚可能な組み合わせ
 export interface SummonableCombination {
   summonNumber: SummonNumber;
   diceIds: string[];
+}
+
+// モンスターカード（デッキ構築用）
+export interface MonsterCard {
+  id: string;
+  name: string;
+  level: DiceLevel;
+  summonNumber: SummonNumber;
+  monster: MonsterInfo;
+  expansionPattern: number; // EXPANSION_PATTERNSのインデックス
+  diceFaces: DiceFace[]; // 6面のクレスト構成
 }

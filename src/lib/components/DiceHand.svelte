@@ -1,7 +1,8 @@
 <script lang="ts">
   import { gameState, playerId } from '$lib/stores/game-store';
   import { getSummonableCombinations, getSummonableGroups } from '$lib/game/dice';
-  import type { RolledDice, CrestType, SummonableCombination, SummonNumber } from '$lib/game/types';
+  import { EXPANSION_PATTERNS } from '$lib/game/dice-expansion';
+  import type { RolledDice, CrestType, SummonableCombination, SummonNumber, Position } from '$lib/game/types';
   
   export let selectedDiceId: string | null = null;
   export let onDiceSelect: (diceId: string) => void = () => {};
@@ -15,22 +16,17 @@
   let selectedDice: RolledDice | null = null;
 
   function handleDiceClick(dice: RolledDice, event: MouseEvent) {
-    // 右クリックは詳細表示
-    if (event.button === 2) {
-      event.preventDefault();
-      selectDice(dice);
-      return;
-    }
-
     // 召喚フェーズで召喚可能なダイスの場合は選択
     if (canSummon && dice.rolledFace.crestType === 'summon') {
       const summonNumber = dice.rolledFace.summonNumber!;
       if (summonableGroups.has(summonNumber)) {
         onDiceSelect(dice.dice.id);
+        return;
       }
-    } else {
-      selectDice(dice);
     }
+    
+    // それ以外は詳細表示
+    selectDice(dice);
   }
 
   function handleDiceRightClick(dice: RolledDice, event: MouseEvent) {
@@ -92,6 +88,27 @@
     };
     return colors[crestType];
   }
+
+  // 展開パターンを取得
+  function getExpansionPattern(dice: RolledDice): Position[] {
+    const patternIndex = dice.dice.expansionPattern;
+    return EXPANSION_PATTERNS[patternIndex] || [];
+  }
+
+  // 展開パターンを5x5グリッドで表示するためのデータを生成
+  function generateExpansionGrid(pattern: Position[]): boolean[][] {
+    const grid: boolean[][] = [];
+    // 5x5のグリッド（中心が0,0）
+    for (let y = -2; y <= 2; y++) {
+      const row: boolean[] = [];
+      for (let x = -2; x <= 2; x++) {
+        const isInPattern = pattern.some(pos => pos.x === x && pos.y === y);
+        row.push(isInPattern);
+      }
+      grid.push(row);
+    }
+    return grid;
+  }
 </script>
 
 <div class="dice-hand">
@@ -133,7 +150,6 @@
           title={isSummonable ? 'クリックで選択 / 右クリックで詳細' : '右クリックで詳細表示'}
           style="border-color: {getCrestColor(rolledDice.rolledFace.crestType)}"
         >
-          <!-- ダイスカードの内容は同じ -->
           <div class="dice-level">Lv.{rolledDice.dice.level}</div>
           <div class="dice-icon">{getCrestIcon(rolledDice.rolledFace.crestType)}</div>
           <div class="dice-type">{getCrestText(rolledDice.rolledFace.crestType)}</div>
@@ -154,62 +170,96 @@
 
 <!-- ダイス詳細モーダル -->
 {#if selectedDice}
+  {@const expansionPattern = getExpansionPattern(selectedDice)}
+  {@const expansionGrid = generateExpansionGrid(expansionPattern)}
   <div class="modal-overlay" on:click={closeDetail}>
     <div class="modal-content" on:click|stopPropagation>
       <button class="close-btn" on:click={closeDetail}>×</button>
       
+      <!-- モンスター名 -->
       <div class="detail-header">
-        <div class="detail-icon">{getCrestIcon(selectedDice.rolledFace.crestType)}</div>
-        <h2>{getCrestText(selectedDice.rolledFace.crestType)}</h2>
+        <h2 class="monster-name">{selectedDice.dice.monster.name}</h2>
         <div class="dice-level-large">Lv.{selectedDice.dice.level}</div>
       </div>
 
       <div class="detail-body">
-        <div class="detail-row">
-          <span class="label">ダイスレベル:</span>
-          <span class="value">Lv.{selectedDice.dice.level}</span>
-        </div>
-
-        {#if selectedDice.rolledFace.crestType === 'summon'}
-          <div class="detail-row">
-            <span class="label">召喚数字:</span>
-            <span class="value">☆{selectedDice.rolledFace.summonNumber}</span>
-          </div>
-        {/if}
-
-        {#if selectedDice.rolledFace.multiplier && selectedDice.rolledFace.multiplier > 1}
-          <div class="detail-row">
-            <span class="label">倍率:</span>
-            <span class="value">×{selectedDice.rolledFace.multiplier}</span>
-          </div>
-        {/if}
-
-        <div class="monster-info">
-          <h3>モンスター情報</h3>
-          <div class="detail-row">
-            <span class="label">攻撃力:</span>
-            <span class="value">{selectedDice.dice.monster?.attack}</span>
-          </div>
-          <div class="detail-row">
-            <span class="label">防御力:</span>
-            <span class="value">{selectedDice.dice.monster?.defense}</span>
+        <!-- ステータス -->
+        <div class="stats-section">
+          <h3>ステータス</h3>
+          <div class="stats-grid">
+            <div class="stat-item">
+              <span class="stat-label">攻撃力:</span>
+              <span class="stat-value">{selectedDice.dice.monster.attack}</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">防御力:</span>
+              <span class="stat-value">{selectedDice.dice.monster.defense}</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">HP:</span>
+              <span class="stat-value">{selectedDice.dice.monster.hp}</span>
+            </div>
           </div>
         </div>
 
-        <div class="detail-description">
-          {#if selectedDice.rolledFace.crestType === 'summon'}
-            同じ☆{selectedDice.rolledFace.summonNumber}が2つ以上あれば召喚できます。
-          {:else if selectedDice.rolledFace.crestType === 'movement'}
-            モンスターの移動に使用できます。
-          {:else if selectedDice.rolledFace.crestType === 'attack'}
-            攻撃時に使用します。
-          {:else if selectedDice.rolledFace.crestType === 'defense'}
-            防御時に使用します。
-          {:else if selectedDice.rolledFace.crestType === 'magic'}
-            特殊能力の発動に使用します。
-          {:else if selectedDice.rolledFace.crestType === 'trap'}
-            罠の発動に使用します。
-          {/if}
+        <!-- ロールした面 -->
+        <div class="rolled-face-section">
+          <h3>ロールした面</h3>
+          <div class="rolled-face-display">
+            <div class="face-icon" style="color: {getCrestColor(selectedDice.rolledFace.crestType)}">
+              {getCrestIcon(selectedDice.rolledFace.crestType)}
+            </div>
+            <div class="face-details">
+              <div class="face-type">{getCrestText(selectedDice.rolledFace.crestType)}</div>
+              {#if selectedDice.rolledFace.crestType === 'summon'}
+                <div class="face-summon">☆{selectedDice.rolledFace.summonNumber}</div>
+              {/if}
+              {#if selectedDice.rolledFace.multiplier && selectedDice.rolledFace.multiplier > 1}
+                <div class="face-multiplier">×{selectedDice.rolledFace.multiplier}</div>
+              {/if}
+            </div>
+          </div>
+        </div>
+
+        <!-- 特殊能力 -->
+        {#if selectedDice.dice.monster.abilities && selectedDice.dice.monster.abilities.length > 0}
+          <div class="abilities-section">
+            <h3>特殊能力</h3>
+            {#each selectedDice.dice.monster.abilities as ability}
+              <div class="ability-item">
+                <div class="ability-effect">{ability.effect}</div>
+                {#if ability.cost}
+                  <div class="ability-cost">
+                    コスト: {JSON.stringify(ability.cost).replace(/[{}]/g, '').replace(/"/g, '')}
+                  </div>
+                {/if}
+              </div>
+            {/each}
+          </div>
+        {/if}
+
+        <!-- 展開パターン -->
+        <div class="expansion-section">
+          <h3>展開パターン</h3>
+          <div class="expansion-grid">
+            {#each expansionGrid as row, y}
+              <div class="expansion-row">
+                {#each row as cell, x}
+                  {@const isCenter = y === 2 && x === 2}
+                  <div class="expansion-cell {cell ? 'active' : ''} {isCenter ? 'center' : ''}">
+                    {#if isCenter}
+                      🐉
+                    {:else if cell}
+                      ▪
+                    {/if}
+                  </div>
+                {/each}
+              </div>
+            {/each}
+          </div>
+          <div class="expansion-info">
+            中心🐉がモンスター配置位置、▪がダンジョン領域
+          </div>
         </div>
       </div>
     </div>
@@ -279,6 +329,16 @@
     font-size: 1.1rem;
   }
 
+  .selection-info {
+    background: rgba(76, 175, 80, 0.3);
+    padding: 8px;
+    border-radius: 8px;
+    margin-bottom: 12px;
+    text-align: center;
+    font-weight: bold;
+    border: 2px solid #4caf50;
+  }
+
   .dice-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
@@ -328,10 +388,41 @@
     position: relative;
   }
 
+  .dice-card.selectable {
+    border-color: gold !important;
+    box-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+  }
+
+  .dice-card.selected {
+    background: rgba(76, 175, 80, 0.5);
+    border-color: #4caf50 !important;
+    transform: scale(0.95);
+  }
+
   .dice-card:hover {
     transform: scale(1.05);
     background: rgba(255, 255, 255, 0.3);
     box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+  }
+
+  .dice-card.selected:hover {
+    transform: scale(1);
+  }
+
+  .selected-badge {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    background: #4caf50;
+    color: white;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: bold;
   }
 
   .dice-level {
@@ -395,7 +486,7 @@
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     border-radius: 16px;
     padding: 30px;
-    max-width: 450px;
+    max-width: 500px;
     width: 90%;
     color: white;
     position: relative;
@@ -438,18 +529,15 @@
     margin-bottom: 25px;
   }
 
-  .detail-icon {
-    font-size: 5rem;
-    margin-bottom: 10px;
-  }
-
-  .detail-header h2 {
+  .monster-name {
     margin: 0 0 10px 0;
-    font-size: 1.8rem;
+    font-size: 1.6rem;
+    font-weight: bold;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
   }
 
   .dice-level-large {
-    font-size: 1.2rem;
+    font-size: 1.1rem;
     background: rgba(255, 255, 255, 0.2);
     padding: 5px 15px;
     border-radius: 20px;
@@ -462,49 +550,151 @@
     border-radius: 12px;
   }
 
-  .detail-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 12px;
-    padding-bottom: 12px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+  .stats-section,
+  .rolled-face-section,
+  .abilities-section,
+  .expansion-section {
+    margin-bottom: 20px;
+    padding-bottom: 20px;
+    border-bottom: 2px solid rgba(255, 255, 255, 0.2);
   }
 
-  .detail-row:last-of-type {
+  .stats-section:last-child,
+  .rolled-face-section:last-child,
+  .abilities-section:last-child,
+  .expansion-section:last-child {
     border-bottom: none;
     margin-bottom: 0;
     padding-bottom: 0;
   }
 
-  .label {
-    font-weight: bold;
-    font-size: 1rem;
+  h3 {
+    margin: 0 0 12px 0;
+    font-size: 1.1rem;
+    color: #ffd700;
   }
 
-  .value {
-    font-size: 1.2rem;
-    font-weight: bold;
+  .stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
   }
 
-  .monster-info {
-    margin-top: 20px;
-    padding-top: 20px;
-    border-top: 2px solid rgba(255, 255, 255, 0.3);
-  }
-
-  .monster-info h3 {
-    margin: 0 0 15px 0;
-    font-size: 1.2rem;
-    text-align: center;
-  }
-
-  .detail-description {
-    margin-top: 20px;
-    padding: 15px;
+  .stat-item {
     background: rgba(255, 255, 255, 0.1);
+    padding: 10px;
     border-radius: 8px;
-    line-height: 1.6;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .stat-label {
+    font-size: 0.9rem;
+  }
+
+  .stat-value {
+    font-size: 1.3rem;
+    font-weight: bold;
+  }
+
+  .rolled-face-display {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    background: rgba(255, 255, 255, 0.1);
+    padding: 15px;
+    border-radius: 8px;
+  }
+
+  .face-icon {
+    font-size: 3rem;
+  }
+
+  .face-details {
+    flex: 1;
+  }
+
+  .face-type {
+    font-size: 1.2rem;
+    font-weight: bold;
+    margin-bottom: 5px;
+  }
+
+  .face-summon {
+    font-size: 1.1rem;
+    color: gold;
+  }
+
+  .face-multiplier {
+    font-size: 1rem;
+    color: #ff6b6b;
+  }
+
+  .abilities-section {
+  }
+
+  .ability-item {
+    background: rgba(255, 255, 255, 0.1);
+    padding: 12px;
+    border-radius: 8px;
+    margin-bottom: 10px;
+  }
+
+  .ability-item:last-child {
+    margin-bottom: 0;
+  }
+
+  .ability-effect {
     font-size: 0.95rem;
+    line-height: 1.5;
+    margin-bottom: 5px;
+  }
+
+  .ability-cost {
+    font-size: 0.85rem;
+    color: #ffd700;
+    font-style: italic;
+  }
+
+  .expansion-grid {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .expansion-row {
+    display: flex;
+    gap: 2px;
+  }
+
+  .expansion-cell {
+    width: 30px;
+    height: 30px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+  }
+
+  .expansion-cell.active {
+    background: rgba(100, 200, 255, 0.4);
+    border-color: rgba(100, 200, 255, 0.8);
+  }
+
+  .expansion-cell.center {
+    background: rgba(255, 100, 100, 0.5);
+    border-color: rgba(255, 100, 100, 0.9);
+    font-size: 1.5rem;
+  }
+
+  .expansion-info {
+    margin-top: 10px;
+    font-size: 0.85rem;
+    text-align: center;
+    opacity: 0.8;
   }
 </style>

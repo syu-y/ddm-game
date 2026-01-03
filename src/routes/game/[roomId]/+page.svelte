@@ -14,6 +14,7 @@
     sendGameAction
   } from '$lib/stores/game-store';
   import { getSummonableGroups } from '$lib/game/dice';
+  import { EXPANSION_PATTERNS } from '$lib/game/dice-expansion';
   import type { Position } from '$lib/game/types';
   import GameBoard from '$lib/components/GameBoard.svelte';
   import PlayerInfo from '$lib/components/PlayerInfo.svelte';
@@ -28,6 +29,7 @@
   let summonMode = false;
   let selectedPosition: Position | null = null;
   let previousHandSize = 0;
+  let expansionPattern: Position[] = [];
 
   // ゲーム状態の変化を監視して召喚モードをリセット
   $: {
@@ -37,10 +39,10 @@
       
       // 手札が減った（召喚が成功した）場合、召喚モードをリセット
       if (summonMode && currentHandSize < previousHandSize) {
-        console.log('召喚成功を検知 - モードリセット');
         summonMode = false;
         selectedDiceId = null;
         selectedPosition = null;
+        expansionPattern = [];
       }
       
       previousHandSize = currentHandSize;
@@ -49,12 +51,9 @@
 
   onMount(() => {
     if (!$socket) {
-      console.warn('Socket接続なし、トップページへ');
       goto('/');
       return;
     }
-    
-    console.log('ゲーム画面マウント - ルームID:', roomIdParam);
     
     // 初期の手札サイズを記録
     const player = $gameState?.players.find(p => p.id === $playerId);
@@ -63,7 +62,6 @@
 
   onDestroy(() => {
     if ($socket) {
-      console.log('ゲーム画面アンマウント - 退出処理');
       $socket.emit('leave-room');
       $socket.disconnect();
     }
@@ -76,11 +74,20 @@
     // 既に選択されている場合は解除
     if (selectedDiceId === diceId) {
       selectedDiceId = null;
+      expansionPattern = [];
     } else {
       selectedDiceId = diceId;
+      
+      // 選択したダイスの展開パターンを取得
+      const player = $gameState.players.find(p => p.id === $playerId);
+      if (player) {
+        const selectedRolledDice = player.hand.find(rd => rd.dice.id === diceId);
+        if (selectedRolledDice) {
+          const patternIndex = selectedRolledDice.dice.expansionPattern;
+          expansionPattern = EXPANSION_PATTERNS[patternIndex] || [];
+        }
+      }
     }
-
-    console.log('選択中のダイス:', selectedDiceId);
   }
 
   // 召喚モード開始
@@ -114,7 +121,6 @@
     previousHandSize = player.hand.length;
 
     summonMode = true;
-    console.log('召喚モード開始 - 選択したダイス:', selectedDiceId);
   }
 
   // 召喚キャンセル
@@ -122,14 +128,12 @@
     summonMode = false;
     selectedDiceId = null;
     selectedPosition = null;
-    console.log('召喚キャンセル');
+    expansionPattern = [];
   }
 
   // 盤面クリック
   function handleTileClick(position: Position) {
     if (!summonMode || !selectedDiceId) return;
-
-    console.log('召喚位置選択:', position);
 
     // 選択したダイスと同じ召喚数字を持つダイスをすべて取得
     const player = $gameState?.players.find(p => p.id === $playerId);
@@ -151,16 +155,11 @@
     // すべての同じ召喚数字のダイスIDを送信
     const diceIds = sameSummonNumberDice.map(rd => rd.dice.id);
     
-    console.log('召喚アクション送信:', { diceIds, position });
-    
     sendGameAction({
       type: 'SUMMON_MONSTER',
       diceIds: diceIds,
       position: position
     });
-
-    // 注意: リセットはgame-stateの更新を検知してから行う
-    console.log('召喚アクション送信完了 - 応答待機中');
   }
 </script>
 
@@ -202,7 +201,7 @@
                 </button>
               {:else}
                 <div class="summon-mode-active">
-                  <p>配置場所をクリック</p>
+                  <p>配置場所をクリック（マウスホバーでプレビュー表示）</p>
                   <button class="btn btn-cancel" on:click={cancelSummon}>
                     キャンセル
                   </button>
@@ -214,14 +213,21 @@
 
         <!-- 中央: ゲーム盤面 -->
         <main class="board-area">
-          {#key summonMode}
-            <GameBoard 
-              board={$gameState.board}
-              onTileClick={handleTileClick}
-              highlightedPositions={selectedPosition ? [selectedPosition] : []}
-              showDeployable={summonMode}
-            />
-          {/key}
+          {#if summonMode}
+            <div class="summon-guide">
+              <div class="guide-title">📍 召喚モード</div>
+              <div class="guide-text">
+                緑色のマスにマウスをホバーすると展開パターンが表示されます
+              </div>
+            </div>
+          {/if}
+          <GameBoard 
+            board={$gameState.board}
+            onTileClick={handleTileClick}
+            highlightedPositions={selectedPosition ? [selectedPosition] : []}
+            showDeployable={summonMode}
+            expansionPattern={expansionPattern}
+          />
         </main>
 
         <!-- 右: 相手の情報 -->
@@ -268,9 +274,7 @@
   </div>
 </div>
 
-<!-- スタイルは同じ -->
 <style>
-  /* 前と同じスタイルなので省略 */
   .game-container {
     width: 100vw;
     height: 100vh;
@@ -331,7 +335,7 @@
   .top-area {
     flex: 1;
     display: grid;
-    grid-template-columns: 400px 1fr 400px;
+    grid-template-columns: 300px 1fr 300px;
     gap: 15px;
     min-height: 0;
   }
@@ -357,12 +361,36 @@
 
   .board-area {
     display: flex;
+    flex-direction: column;
     justify-content: center;
     align-items: center;
     overflow: auto;
     background: rgba(0, 0, 0, 0.2);
     border-radius: 12px;
     padding: 10px;
+    gap: 10px;
+    pointer-events: auto;
+  }
+
+  .summon-guide {
+    background: linear-gradient(135deg, rgba(76, 175, 80, 0.3) 0%, rgba(67, 160, 71, 0.3) 100%);
+    border: 2px solid #4caf50;
+    padding: 12px 20px;
+    border-radius: 10px;
+    color: white;
+    text-align: center;
+    box-shadow: 0 0 20px rgba(76, 175, 80, 0.4);
+  }
+
+  .guide-title {
+    font-size: 1.1rem;
+    font-weight: bold;
+    margin-bottom: 5px;
+  }
+
+  .guide-text {
+    font-size: 0.9rem;
+    opacity: 0.95;
   }
 
   .opponent-hand-info {
@@ -450,7 +478,7 @@
 
   .summon-mode-active p {
     margin: 0 0 10px 0;
-    font-size: 1.1rem;
+    font-size: 1rem;
     color: gold;
     animation: pulse 1.5s infinite;
   }

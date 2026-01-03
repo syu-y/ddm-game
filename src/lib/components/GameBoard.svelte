@@ -7,11 +7,41 @@
   export let onTileClick: (position: Position) => void = () => {};
   export let highlightedPositions: Position[] = [];
   export let showDeployable: boolean = false;
+  export let expansionPattern: Position[] = []; // 展開パターン（相対座標）
 
   const BOARD_SIZE = 13;
+  
+  // ローカル状態としてプレビュー位置を管理
+  let previewPosition: Position | null = null;
+  
+  // 配置可能な位置、展開プレビュー、有効性チェックの結果を保持
+  let deployablePositions: Set<string> = new Set();
+  let expansionPreviewPositions: Set<string> = new Set();
+  let expansionValid: boolean = false;
 
   // 配置可能な位置をリアクティブに計算
-  $: deployablePositions = calculateDeployablePositions(board, showDeployable, $gameState, $playerId);
+  $: {
+    deployablePositions = calculateDeployablePositions(board, showDeployable, $gameState, $playerId);
+    if (showDeployable && deployablePositions.size > 0) {
+      console.log(`🟢 配置可能なマス: ${deployablePositions.size}個`, Array.from(deployablePositions));
+    }
+  }
+
+  // 展開プレビューの位置を計算
+  $: {
+    expansionPreviewPositions = calculateExpansionPreview(previewPosition, expansionPattern);
+    if (expansionPreviewPositions.size > 0) {
+      console.log(`🔵 展開プレビュー: ${expansionPreviewPositions.size}マス`, Array.from(expansionPreviewPositions));
+    }
+  }
+  
+  // 展開パターンが有効かどうかをチェック
+  $: {
+    expansionValid = checkExpansionValidity(previewPosition, expansionPattern, board, $playerId);
+    if (previewPosition) {
+      console.log(`${expansionValid ? '✅' : '❌'} 展開パターン有効性:`, expansionValid);
+    }
+  }
 
   function calculateDeployablePositions(
     board: Tile[][], 
@@ -21,20 +51,15 @@
   ): Set<string> {
     const positions = new Set<string>();
 
-    console.log('配置可能位置を計算:', { showDeployable, phase: gameState?.phase, playerId });
-
     if (!showDeployable) {
-      console.log('  → showDeployable が false');
       return positions;
     }
 
     if (!gameState || gameState.phase !== 'summon') {
-      console.log('  → フェーズが summon ではない');
       return positions;
     }
 
     if (!playerId) {
-      console.log('  → playerId が存在しない');
       return positions;
     }
 
@@ -47,10 +72,67 @@
       }
     }
 
-    console.log('  → 配置可能な位置の数:', positions.size);
-    console.log('  → 配置可能な位置:', Array.from(positions));
+    return positions;
+  }
+
+  function calculateExpansionPreview(
+    previewPos: Position | null,
+    pattern: Position[]
+  ): Set<string> {
+    const positions = new Set<string>();
+    
+    if (!previewPos || pattern.length === 0) {
+      return positions;
+    }
+
+    // 展開パターンを絶対座標に変換
+    pattern.forEach(relativePos => {
+      const absX = previewPos.x + relativePos.x;
+      const absY = previewPos.y + relativePos.y;
+      
+      // 盤面内かチェック
+      if (absX >= 0 && absX < BOARD_SIZE && absY >= 0 && absY < BOARD_SIZE) {
+        positions.add(`${absX},${absY}`);
+      }
+    });
 
     return positions;
+  }
+
+  // 展開パターンが有効かチェック
+  function checkExpansionValidity(
+    previewPos: Position | null,
+    pattern: Position[],
+    board: Tile[][],
+    playerId: string | null
+  ): boolean {
+    if (!previewPos || !playerId || pattern.length === 0) {
+      return false;
+    }
+
+    // すべての展開位置が有効かチェック
+    for (const relativePos of pattern) {
+      const absX = previewPos.x + relativePos.x;
+      const absY = previewPos.y + relativePos.y;
+
+      // 盤面外の場合は無効
+      if (absX < 0 || absX >= BOARD_SIZE || absY < 0 || absY >= BOARD_SIZE) {
+        return false;
+      }
+
+      const tile = board[absY][absX];
+      const isCenter = (absX === previewPos.x && absY === previewPos.y);
+
+      // 中心以外のマスをチェック
+      if (!isCenter) {
+        // 空きマスまたは自分のダンジョンでない場合は無効
+        if (tile.type !== 'empty' && !(tile.type === 'dungeon' && tile.owner === playerId)) {
+          return false;
+        }
+      }
+    }
+
+    return true;
   }
 
   function handleTileClick(x: number, y: number) {
@@ -65,6 +147,16 @@
     return deployablePositions.has(`${x},${y}`);
   }
 
+  function isExpansionPreview(x: number, y: number): boolean {
+    return expansionPreviewPositions.has(`${x},${y}`);
+  }
+
+  function isExpansionCenter(x: number, y: number): boolean {
+    return previewPosition !== null && 
+           previewPosition.x === x && 
+           previewPosition.y === y;
+  }
+
   function handleTileClickWithInfo(x: number, y: number) {
     const tile = board[y]?.[x];
     
@@ -75,24 +167,91 @@
     }
   }
 
+  function handleTileHover(x: number, y: number) {
+    const isDeployableNow = isDeployable(x, y);
+    console.log(`🖱️ Hover (${x}, ${y}): deployable=${isDeployableNow}, showDeployable=${showDeployable}`);
+    
+    // 召喚モード中で配置可能な位置の場合、プレビューを表示
+    if (showDeployable && isDeployableNow) {
+      previewPosition = { x, y };
+      console.log(`✅ Preview ON: (${x}, ${y}), expansionPattern: ${expansionPattern.length} tiles`);
+      
+      // 展開プレビュー表示後の状態を確認
+      setTimeout(() => {
+        console.log(`📊 After preview set:`);
+        console.log(`  - expansionPreviewPositions:`, Array.from(expansionPreviewPositions));
+        console.log(`  - expansionValid:`, expansionValid);
+      }, 50);
+    }
+  }
+
+  function handleTileLeave() {
+    // プレビューをクリア
+    if (previewPosition) {
+      console.log('❌ Preview OFF');
+    }
+    previewPosition = null;
+  }
+
   let selectedMonsterTile: Tile | null = null;
 
   function closeMonsterInfo() {
     selectedMonsterTile = null;
   }
+
+  function getTileColor(tile: Tile | undefined): string {
+    if (!tile) return '';
+    
+    if (tile.type === 'dungeon' && tile.owner) {
+      if (tile.owner === $playerId) {
+        return 'rgba(100, 100, 255, 0.4)';
+      } else {
+        return 'rgba(255, 100, 100, 0.4)';
+      }
+    }
+    
+    return '';
+  }
 </script>
 
 <div class="board">
+  {#if showDeployable}
+    <div style="position: absolute; top: -25px; left: 0; background: yellow; color: black; padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;">
+      配置可能: {deployablePositions.size}個 | プレビュー: {expansionPreviewPositions.size}個
+    </div>
+  {/if}
   {#each Array(BOARD_SIZE) as _, y}
     <div class="row">
+      {#key `${expansionPreviewPositions.size}-${previewPosition?.x}-${previewPosition?.y}`}
       {#each Array(BOARD_SIZE) as _, x}
         {@const tile = board[y]?.[x]}
         {@const deployable = isDeployable(x, y)}
         {@const highlighted = isHighlighted(x, y)}
+        {@const dungeonColor = getTileColor(tile)}
+        {@const expansionPreview = isExpansionPreview(x, y)}
+        {@const expansionCenter = isExpansionCenter(x, y)}
+        {@const isValidExpansion = expansionValid}
+        {@const previewStyle = 
+          expansionCenter && isValidExpansion ? 'background: rgba(255, 165, 0, 0.95) !important; border: 6px solid rgb(255, 165, 0) !important; z-index: 160 !important;' :
+          expansionCenter && !isValidExpansion ? 'background: rgba(255, 50, 50, 0.95) !important; border: 6px solid rgb(255, 0, 0) !important; z-index: 160 !important;' :
+          expansionPreview && isValidExpansion ? 'background: rgba(100, 200, 255, 0.9) !important; border: 5px solid rgb(100, 200, 255) !important; z-index: 150 !important;' :
+          expansionPreview && !isValidExpansion ? 'background: rgba(255, 100, 100, 0.9) !important; border: 5px solid rgb(255, 50, 50) !important; z-index: 150 !important;' :
+          deployable && !expansionPreview && !expansionCenter ? 'background: rgba(0, 255, 0, 0.7) !important; border: 4px solid rgb(0, 255, 0) !important; z-index: 100 !important;' : 
+          dungeonColor ? `background: ${dungeonColor};` : ''
+        }
         <button 
-          class="tile {tile?.type || 'empty'} {tile?.owner ? 'owned' : ''} {deployable ? 'deployable' : ''} {highlighted ? 'highlighted' : ''}" 
+          class="tile {tile?.type || 'empty'} {tile?.owner ? 'owned' : ''} {deployable ? 'deployable' : ''} {highlighted ? 'highlighted' : ''} {expansionPreview && !expansionCenter ? (isValidExpansion ? 'expansion-preview-valid' : 'expansion-preview-invalid') : ''} {expansionCenter ? (isValidExpansion ? 'expansion-center-valid' : 'expansion-center-invalid') : ''}" 
           data-owner={tile?.owner}
+          data-x={x}
+          data-y={y}
+          data-deployable={deployable}
+          data-expansion-preview={expansionPreview}
+          data-expansion-center={expansionCenter}
+          data-expansion-valid={expansionValid}
+          style={previewStyle}
           on:click={() => handleTileClickWithInfo(x, y)}
+          on:mouseenter={() => handleTileHover(x, y)}
+          on:mouseleave={handleTileLeave}
         >
           {#if tile?.type === 'master'}
             <div class="master-marker">👤</div>
@@ -104,8 +263,19 @@
           {:else if tile?.type === 'dungeon'}
             <div class="dungeon-tile"></div>
           {/if}
+          
+          {#if deployable}
+            <div class="deployable-indicator">⬇️</div>
+          {/if}
+          
+          {#if expansionCenter}
+            <div class="preview-icon {isValidExpansion ? 'valid' : 'invalid'}">🐉</div>
+          {:else if expansionPreview}
+            <div class="preview-marker {isValidExpansion ? 'valid' : 'invalid'}">▪</div>
+          {/if}
         </button>
       {/each}
+      {/key}
     </div>
   {/each}
 </div>
@@ -113,8 +283,6 @@
 <!-- モンスター情報モーダル -->
 {#if selectedMonsterTile && selectedMonsterTile.deployedMonster}
   {@const monster = selectedMonsterTile.deployedMonster}
-  <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="modal-overlay" on:click={closeMonsterInfo}>
     <div class="modal-content" on:click|stopPropagation>
       <button class="close-btn" on:click={closeMonsterInfo}>×</button>
@@ -140,7 +308,7 @@
         </div>
         <div class="detail-row">
           <span class="label">HP:</span>
-          <span class="value">{monster.hp} / {monster.monster.defense}</span>
+          <span class="value">{monster.hp} / {monster.monster.hp}</span>
         </div>
         <div class="detail-row">
           <span class="label">所有者:</span>
@@ -157,6 +325,7 @@
     padding: 10px;
     border-radius: 8px;
     display: inline-block;
+    position: relative;
   }
 
   .row {
@@ -175,6 +344,8 @@
     background: rgba(255, 255, 255, 0.05);
     padding: 0;
     cursor: pointer;
+    pointer-events: auto; /* 明示的に有効化 */
+    z-index: 1;
   }
 
   .tile.empty {
@@ -194,11 +365,18 @@
     border: 2px solid gold;
   }
 
-  .tile.deployable {
-    background: rgba(0, 255, 0, 0.4) !important;
-    border: 2px solid #4caf50 !important;
-    cursor: pointer;
-    animation: pulse 1.5s infinite;
+  /* 配置可能マスのスタイルを最優先 */
+  .tile.deployable,
+  .tile.empty.deployable,
+  button.tile.deployable,
+  button.tile.empty.deployable {
+    background: rgba(0, 255, 0, 0.7) !important;
+    border: 4px solid #00ff00 !important;
+    cursor: pointer !important;
+    animation: pulse-deployable 1.5s infinite !important;
+    box-shadow: 0 0 20px rgba(0, 255, 0, 0.8) !important;
+    z-index: 100 !important;
+    position: relative !important;
   }
 
   .tile.highlighted {
@@ -206,14 +384,89 @@
     border: 3px solid yellow !important;
   }
 
-  @keyframes pulse {
+  /* 展開プレビュー - 有効（配置可能より優先） */
+  .tile.expansion-preview-valid,
+  .expansion-preview-valid.tile,
+  button.tile.expansion-preview-valid,
+  button.tile.empty.expansion-preview-valid,
+  button.tile.deployable.expansion-preview-valid {
+    background: rgba(100, 200, 255, 0.9) !important;
+    border: 5px solid rgba(100, 200, 255, 1) !important;
+    animation: pulse-expansion 1.2s infinite !important;
+    z-index: 150 !important;
+  }
+
+  .tile.expansion-center-valid,
+  .expansion-center-valid.tile,
+  button.tile.expansion-center-valid,
+  button.tile.empty.expansion-center-valid,
+  button.tile.deployable.expansion-center-valid {
+    background: rgba(255, 165, 0, 0.95) !important;
+    border: 6px solid rgba(255, 165, 0, 1) !important;
+    animation: pulse-center 1s infinite !important;
+    z-index: 160 !important;
+  }
+
+  /* 展開プレビュー - 無効 */
+  .tile.expansion-preview-invalid,
+  .expansion-preview-invalid.tile,
+  button.tile.expansion-preview-invalid,
+  button.tile.empty.expansion-preview-invalid,
+  button.tile.deployable.expansion-preview-invalid {
+    background: rgba(255, 100, 100, 0.9) !important;
+    border: 5px solid rgba(255, 50, 50, 1) !important;
+    animation: pulse-invalid 1.2s infinite !important;
+    z-index: 150 !important;
+  }
+
+  .tile.expansion-center-invalid,
+  .expansion-center-invalid.tile,
+  button.tile.expansion-center-invalid,
+  button.tile.empty.expansion-center-invalid,
+  button.tile.deployable.expansion-center-invalid {
+    background: rgba(255, 50, 50, 0.95) !important;
+    border: 6px solid rgba(255, 0, 0, 1) !important;
+    animation: pulse-invalid 1s infinite !important;
+    z-index: 160 !important;
+  }
+
+  @keyframes pulse-expansion {
     0%, 100% { 
-      background: rgba(0, 255, 0, 0.4) !important;
-      box-shadow: 0 0 10px rgba(0, 255, 0, 0.6);
+      box-shadow: 0 0 10px rgba(100, 200, 255, 0.6);
     }
     50% { 
-      background: rgba(0, 255, 0, 0.6) !important;
-      box-shadow: 0 0 20px rgba(0, 255, 0, 0.8);
+      box-shadow: 0 0 20px rgba(100, 200, 255, 1);
+    }
+  }
+
+  @keyframes pulse-deployable {
+    0%, 100% { 
+      background: rgba(0, 255, 0, 0.7) !important;
+      box-shadow: 0 0 25px rgba(0, 255, 0, 0.9), inset 0 0 20px rgba(0, 255, 0, 0.3);
+      transform: scale(1);
+    }
+    50% { 
+      background: rgba(0, 255, 0, 0.95) !important;
+      box-shadow: 0 0 40px rgba(0, 255, 0, 1), 0 0 60px rgba(0, 255, 0, 0.7), inset 0 0 30px rgba(0, 255, 0, 0.5);
+      transform: scale(1.08);
+    }
+  }
+
+  @keyframes pulse-center {
+    0%, 100% { 
+      box-shadow: 0 0 15px rgba(255, 165, 0, 0.8);
+    }
+    50% { 
+      box-shadow: 0 0 25px rgba(255, 165, 0, 1);
+    }
+  }
+
+  @keyframes pulse-invalid {
+    0%, 100% { 
+      box-shadow: 0 0 10px rgba(255, 50, 50, 0.8);
+    }
+    50% { 
+      box-shadow: 0 0 20px rgba(255, 0, 0, 1);
     }
   }
 
@@ -221,19 +474,81 @@
     background: rgba(255, 255, 255, 0.15);
   }
 
-  .tile.deployable:hover {
-    background: rgba(0, 255, 0, 0.7) !important;
-    transform: scale(1.1);
+  .tile.deployable:hover,
+  .tile.empty.deployable:hover,
+  button.tile.deployable:hover {
+    background: rgba(0, 255, 0, 0.95) !important;
+    transform: scale(1.25) !important;
+    box-shadow: 0 0 40px rgba(0, 255, 0, 1), 0 0 70px rgba(0, 255, 0, 0.8) !important;
+    z-index: 200 !important;
   }
 
-  .dungeon-tile {
-    width: 100%;
-    height: 100%;
+  .preview-icon {
+    position: absolute;
+    font-size: 24px;
+    pointer-events: none;
+    filter: drop-shadow(0 0 5px rgba(0, 0, 0, 0.5));
+  }
+
+  .preview-icon.valid {
+    opacity: 0.9;
+  }
+
+  .preview-icon.invalid {
     opacity: 0.7;
+    filter: drop-shadow(0 0 5px rgba(255, 0, 0, 0.8));
+  }
+
+  .preview-marker {
+    position: absolute;
+    font-size: 20px;
+    font-weight: bold;
+    pointer-events: none;
+    filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.5));
+  }
+
+  .preview-marker.valid {
+    color: rgba(100, 200, 255, 1);
+    opacity: 0.9;
+  }
+
+  .preview-marker.invalid {
+    color: rgba(255, 100, 100, 1);
+    opacity: 0.8;
+  }
+
+  .deployable-indicator {
+    position: absolute;
+    font-size: 28px;
+    animation: bounce-glow 0.8s infinite;
+    pointer-events: none;
+    filter: drop-shadow(0 0 8px rgba(0, 255, 0, 1)) drop-shadow(0 0 15px rgba(0, 255, 0, 0.8));
+    z-index: 10;
+  }
+
+  @keyframes bounce {
+    0%, 100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-5px);
+    }
+  }
+
+  @keyframes bounce-glow {
+    0%, 100% {
+      transform: translateY(0) scale(1);
+      filter: drop-shadow(0 0 8px rgba(0, 255, 0, 1)) drop-shadow(0 0 15px rgba(0, 255, 0, 0.8));
+    }
+    50% {
+      transform: translateY(-8px) scale(1.15);
+      filter: drop-shadow(0 0 12px rgba(0, 255, 0, 1)) drop-shadow(0 0 25px rgba(0, 255, 0, 1));
+    }
   }
 
   .master-marker {
     font-size: 24px;
+    pointer-events: none;
   }
 
   .monster-marker {
@@ -242,10 +557,12 @@
     align-items: center;
     justify-content: center;
     gap: 2px;
+    pointer-events: none;
   }
 
   .monster-icon {
     font-size: 20px;
+    pointer-events: none;
   }
 
   .monster-level {
@@ -255,6 +572,14 @@
     padding: 1px 3px;
     border-radius: 3px;
     font-weight: bold;
+    pointer-events: none;
+  }
+
+  .dungeon-tile {
+    width: 100%;
+    height: 100%;
+    opacity: 0.7;
+    pointer-events: none;
   }
 
   .tile.owned[data-owner] {
@@ -272,6 +597,7 @@
     background: var(--owner-color, white);
   }
 
+  /* モーダル */
   .modal-overlay {
     position: fixed;
     top: 0;

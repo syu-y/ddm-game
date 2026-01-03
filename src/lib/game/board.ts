@@ -1,9 +1,9 @@
-import type { Tile, Position, Player } from './types';
+import type { Tile, Position } from './types';
 
-const BOARD_SIZE = 13;
+export const BOARD_SIZE = 13;
 
-// 空の盤面を生成
-export function createEmptyBoard(): Tile[][] {
+// 盤面を初期化
+export function createBoard(): Tile[][] {
   const board: Tile[][] = [];
 
   for (let y = 0; y < BOARD_SIZE; y++) {
@@ -20,73 +20,95 @@ export function createEmptyBoard(): Tile[][] {
   return board;
 }
 
-// プレイヤーの初期位置を設定（ダンジョンマスター）
-export function setPlayerPositions(board: Tile[][], player1: Player, player2: Player): void {
-  // プレイヤー1は左下（中央）
-  const p1Pos = { x: 0, y: Math.floor(BOARD_SIZE / 2) };
-  player1.position = p1Pos;
-  board[p1Pos.y][p1Pos.x] = {
-    position: p1Pos,
-    type: 'master', // 'player' から 'master' に変更
-    owner: player1.id
-  };
-
-  // プレイヤー2は右上（中央）
-  const p2Pos = { x: BOARD_SIZE - 1, y: Math.floor(BOARD_SIZE / 2) };
-  player2.position = p2Pos;
-  board[p2Pos.y][p2Pos.x] = {
-    position: p2Pos,
-    type: 'master', // 'player' から 'master' に変更
-    owner: player2.id
-  };
+// タイルを取得
+export function getTile(board: Tile[][], position: Position): Tile | undefined {
+  if (!isInBounds(position, BOARD_SIZE)) {
+    return undefined;
+  }
+  return board[position.y][position.x];
 }
 
-// マスが盤面内か確認
-export function isInBounds(pos: Position): boolean {
-  return pos.x >= 0 && pos.x < BOARD_SIZE && pos.y >= 0 && pos.y < BOARD_SIZE;
-}
-
-// 2つの位置が隣接しているか確認
-export function isAdjacent(pos1: Position, pos2: Position): boolean {
-  const dx = Math.abs(pos1.x - pos2.x);
-  const dy = Math.abs(pos1.y - pos2.y);
-  return (dx === 1 && dy === 0) || (dx === 0 && dy === 1);
-}
-
-// マスを取得
-export function getTile(board: Tile[][], pos: Position): Tile | null {
-  if (!isInBounds(pos)) return null;
-  return board[pos.y][pos.x];
-}
-
-// マスを更新
+// タイルを設定
 export function setTile(board: Tile[][], tile: Tile): void {
-  if (!isInBounds(tile.position)) return;
+  if (!isInBounds(tile.position, BOARD_SIZE)) {
+    console.error('盤面外の位置です:', tile.position);
+    return;
+  }
   board[tile.position.y][tile.position.x] = tile;
 }
 
-// 指定位置が自軍のマスター or 自軍のダンジョンに隣接しているか確認
-export function canDeployAt(board: Tile[][], pos: Position, playerId: string): boolean {
-  if (!isInBounds(pos)) return false;
+// 盤面内かチェック
+export function isInBounds(position: Position, boardSize: number): boolean {
+  return position.x >= 0 && position.x < boardSize &&
+    position.y >= 0 && position.y < boardSize;
+}
 
-  const tile = getTile(board, pos);
-  if (!tile || tile.type !== 'empty') return false;
-
-  // 上下左右の隣接マスをチェック
-  const adjacentPositions = [
-    { x: pos.x - 1, y: pos.y },
-    { x: pos.x + 1, y: pos.y },
-    { x: pos.x, y: pos.y - 1 },
-    { x: pos.x, y: pos.y + 1 }
+// 隣接マスを取得（上下左右）
+export function getAdjacentPositions(position: Position): Position[] {
+  return [
+    { x: position.x, y: position.y - 1 }, // 上
+    { x: position.x, y: position.y + 1 }, // 下
+    { x: position.x - 1, y: position.y }, // 左
+    { x: position.x + 1, y: position.y }, // 右
   ];
+}
+
+// モンスターを配置可能な位置かチェック
+export function canDeployAt(board: Tile[][], position: Position, playerId: string): boolean {
+  const tile = getTile(board, position);
+
+  if (!tile) {
+    return false;
+  }
+
+  // 空きマスでない場合は配置不可
+  if (tile.type !== 'empty') {
+    return false;
+  }
+
+  // 自分のマスターまたは自分のダンジョン/モンスターに隣接しているかチェック
+  const adjacentPositions = getAdjacentPositions(position);
 
   for (const adjPos of adjacentPositions) {
     const adjTile = getTile(board, adjPos);
-    if (adjTile && adjTile.owner === playerId &&
-      (adjTile.type === 'master' || adjTile.type === 'dungeon' || adjTile.type === 'monster')) {
-      return true;
+
+    if (!adjTile) continue;
+
+    // 自分のマスター、ダンジョン、またはモンスターに隣接していればOK
+    if (adjTile.owner === playerId) {
+      if (adjTile.type === 'master' || adjTile.type === 'dungeon' || adjTile.type === 'monster') {
+        return true;
+      }
     }
   }
 
   return false;
+}
+
+// 2つの位置が隣接しているかチェック
+export function isAdjacent(pos1: Position, pos2: Position): boolean {
+  const dx = Math.abs(pos1.x - pos2.x);
+  const dy = Math.abs(pos1.y - pos2.y);
+
+  // 上下左右のいずれかに隣接（斜めは含まない）
+  return (dx === 1 && dy === 0) || (dx === 0 && dy === 1);
+}
+
+// 指定した位置から指定した距離内のマスを取得
+export function getPositionsInRange(center: Position, range: number): Position[] {
+  const positions: Position[] = [];
+
+  for (let dy = -range; dy <= range; dy++) {
+    for (let dx = -range; dx <= range; dx++) {
+      // マンハッタン距離でチェック
+      if (Math.abs(dx) + Math.abs(dy) <= range) {
+        const pos = { x: center.x + dx, y: center.y + dy };
+        if (isInBounds(pos, BOARD_SIZE)) {
+          positions.push(pos);
+        }
+      }
+    }
+  }
+
+  return positions;
 }
