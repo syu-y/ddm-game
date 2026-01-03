@@ -20,28 +20,13 @@
   let expansionValid: boolean = false;
 
   // 配置可能な位置をリアクティブに計算
-  $: {
-    deployablePositions = calculateDeployablePositions(board, showDeployable, $gameState, $playerId);
-    if (showDeployable && deployablePositions.size > 0) {
-      console.log(`🟢 配置可能なマス: ${deployablePositions.size}個`, Array.from(deployablePositions));
-    }
-  }
+  $: deployablePositions = calculateDeployablePositions(board, showDeployable, $gameState, $playerId);
 
   // 展開プレビューの位置を計算
-  $: {
-    expansionPreviewPositions = calculateExpansionPreview(previewPosition, expansionPattern);
-    if (expansionPreviewPositions.size > 0) {
-      console.log(`🔵 展開プレビュー: ${expansionPreviewPositions.size}マス`, Array.from(expansionPreviewPositions));
-    }
-  }
+  $: expansionPreviewPositions = calculateExpansionPreview(previewPosition, expansionPattern);
   
   // 展開パターンが有効かどうかをチェック
-  $: {
-    expansionValid = checkExpansionValidity(previewPosition, expansionPattern, board, $playerId);
-    if (previewPosition) {
-      console.log(`${expansionValid ? '✅' : '❌'} 展開パターン有効性:`, expansionValid);
-    }
-  }
+  $: expansionValid = checkExpansionValidity(previewPosition, expansionPattern, board, $playerId);
 
   function calculateDeployablePositions(
     board: Tile[][], 
@@ -168,28 +153,14 @@
   }
 
   function handleTileHover(x: number, y: number) {
-    const isDeployableNow = isDeployable(x, y);
-    console.log(`🖱️ Hover (${x}, ${y}): deployable=${isDeployableNow}, showDeployable=${showDeployable}`);
-    
     // 召喚モード中で配置可能な位置の場合、プレビューを表示
-    if (showDeployable && isDeployableNow) {
+    if (showDeployable && isDeployable(x, y)) {
       previewPosition = { x, y };
-      console.log(`✅ Preview ON: (${x}, ${y}), expansionPattern: ${expansionPattern.length} tiles`);
-      
-      // 展開プレビュー表示後の状態を確認
-      setTimeout(() => {
-        console.log(`📊 After preview set:`);
-        console.log(`  - expansionPreviewPositions:`, Array.from(expansionPreviewPositions));
-        console.log(`  - expansionValid:`, expansionValid);
-      }, 50);
     }
   }
 
   function handleTileLeave() {
     // プレビューをクリア
-    if (previewPosition) {
-      console.log('❌ Preview OFF');
-    }
     previewPosition = null;
   }
 
@@ -215,11 +186,6 @@
 </script>
 
 <div class="board">
-  {#if showDeployable}
-    <div style="position: absolute; top: -25px; left: 0; background: yellow; color: black; padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;">
-      配置可能: {deployablePositions.size}個 | プレビュー: {expansionPreviewPositions.size}個
-    </div>
-  {/if}
   {#each Array(BOARD_SIZE) as _, y}
     <div class="row">
       {#key `${expansionPreviewPositions.size}-${previewPosition?.x}-${previewPosition?.y}`}
@@ -242,12 +208,6 @@
         <button 
           class="tile {tile?.type || 'empty'} {tile?.owner ? 'owned' : ''} {deployable ? 'deployable' : ''} {highlighted ? 'highlighted' : ''} {expansionPreview && !expansionCenter ? (isValidExpansion ? 'expansion-preview-valid' : 'expansion-preview-invalid') : ''} {expansionCenter ? (isValidExpansion ? 'expansion-center-valid' : 'expansion-center-invalid') : ''}" 
           data-owner={tile?.owner}
-          data-x={x}
-          data-y={y}
-          data-deployable={deployable}
-          data-expansion-preview={expansionPreview}
-          data-expansion-center={expansionCenter}
-          data-expansion-valid={expansionValid}
           style={previewStyle}
           on:click={() => handleTileClickWithInfo(x, y)}
           on:mouseenter={() => handleTileHover(x, y)}
