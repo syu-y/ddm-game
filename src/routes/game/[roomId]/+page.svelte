@@ -82,13 +82,19 @@
 
   // ダイス選択
   function handleDiceSelect(diceId: string) {
-    if (!$gameState || $gameState.phase !== 'summon') return;
+    console.log('🎲 ダイス選択:', diceId);
+    
+    if (!$gameState || $gameState.phase !== 'summon') {
+      console.log('❌ 召喚フェーズではありません');
+      return;
+    }
 
     // 既に選択されている場合は解除
     if (selectedDiceId === diceId) {
       selectedDiceId = null;
       expansionPattern = [];
       rotationAngle = 0;
+      console.log('🔄 ダイス選択解除');
     } else {
       selectedDiceId = diceId;
       rotationAngle = 0; // 新しいダイスを選択したら回転をリセット
@@ -100,6 +106,13 @@
         if (selectedRolledDice) {
           const patternIndex = selectedRolledDice.dice.expansionPattern;
           expansionPattern = EXPANSION_PATTERNS[patternIndex] || [];
+          console.log('✅ 展開パターン取得:', {
+            patternIndex,
+            patternLength: expansionPattern.length,
+            pattern: expansionPattern
+          });
+        } else {
+          console.log('❌ ダイスが見つかりません');
         }
       }
     }
@@ -156,24 +169,48 @@
   // 展開パターンを回転（右クリック時に呼ばれる）
   function rotateExpansionPattern() {
     if (!summonMode) return;
+    const oldAngle = rotationAngle;
     rotationAngle = (rotationAngle + 90) % 360;
+    console.log('🔄 展開パターン回転:', {
+      from: oldAngle,
+      to: rotationAngle,
+      originalPattern: expansionPattern,
+      rotatedPattern: rotatedExpansionPattern
+    });
   }
 
   // 盤面クリック
   function handleTileClick(position: Position) {
+    console.log('🖱️ タイルクリック:', position, 'summonMode:', summonMode);
+    
     if (!summonMode || !selectedDiceId) return;
 
     // 選択したダイスと同じ召喚数字を持つダイスをすべて取得
     const player = $gameState?.players.find(p => p.id === $playerId);
-    if (!player) return;
+    if (!player) {
+      console.error('❌ プレイヤーが見つかりません');
+      return;
+    }
 
     const selectedRolledDice = player.hand.find(rd => rd.dice.id === selectedDiceId);
-    if (!selectedRolledDice) return;
+    if (!selectedRolledDice) {
+      console.error('❌ 選択したダイスが見つかりません');
+      return;
+    }
 
     const summonNumber = selectedRolledDice.rolledFace.summonNumber!;
     const sameSummonNumberDice = player.hand.filter(
       rd => rd.rolledFace.crestType === 'summon' && rd.rolledFace.summonNumber === summonNumber
     );
+
+    console.log('📊 召喚チェック:', {
+      summonNumber,
+      diceCount: sameSummonNumberDice.length,
+      position,
+      rotationAngle,
+      originalPattern: expansionPattern.length,
+      rotatedPattern: rotatedExpansionPattern.length
+    });
 
     if (sameSummonNumberDice.length < 2) {
       alert('召喚には同じ数字が2つ以上必要です');
@@ -183,10 +220,40 @@
     // すべての同じ召喚数字のダイスIDを送信
     const diceIds = sameSummonNumberDice.map(rd => rd.dice.id);
     
+    // デバッグ：展開パターンの絶対座標を計算
+    const absolutePositions = rotatedExpansionPattern.map(relativePos => ({
+      x: position.x + relativePos.x,
+      y: position.y + relativePos.y
+    }));
+    
+    const allInBounds = absolutePositions.every(pos => 
+      pos.x >= 0 && pos.x < 13 && pos.y >= 0 && pos.y < 13
+    );
+    
+    console.log('📤 召喚アクション送信:', {
+      diceIds,
+      position,
+      rotation: rotationAngle,
+      rotatedExpansionPattern,
+      absolutePositions,
+      allInBounds: allInBounds ? '✅' : '❌',
+      outOfBounds: absolutePositions.filter(pos => 
+        pos.x < 0 || pos.x >= 13 || pos.y < 0 || pos.y >= 13
+      )
+    });
+    
+    if (!allInBounds) {
+      console.error('❌ クライアント側チェック：展開パターンが盤面外！');
+      alert('展開パターンが盤面外です。別の位置を選択してください。');
+      return;
+    }
+    
     sendGameAction({
       type: 'SUMMON_MONSTER',
+      selectedDiceId: selectedDiceId,
       diceIds: diceIds,
-      position: position
+      position: position,
+      rotation: rotationAngle // 回転角度を追加
     });
   }
 </script>

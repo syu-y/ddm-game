@@ -32,12 +32,13 @@
   // 展開プレビューの位置を計算
   $: {
     expansionPreviewPositions = calculateExpansionPreview(previewPosition, expansionPattern);
-    if (expansionPattern.length > 0) {
-      console.log('📊 GameBoard expansionPattern:', {
-        length: expansionPattern.length,
-        pattern: expansionPattern,
+    if (expansionPattern.length > 0 && previewPosition) {
+      console.log('📊 GameBoard 展開プレビュー計算:', {
         previewPosition,
-        previewPositionsSize: expansionPreviewPositions.size
+        expansionPatternLength: expansionPattern.length,
+        expansionPattern: expansionPattern,
+        expansionPreviewPositionsSize: expansionPreviewPositions.size,
+        expansionPreviewPositions: Array.from(expansionPreviewPositions)
       });
     }
   }
@@ -161,6 +162,20 @@
 
   function handleTileClickWithInfo(x: number, y: number) {
     const tile = board[y]?.[x];
+    const deployable = isDeployable(x, y);
+    const expansionPreview = isExpansionPreview(x, y);
+    const expansionCenter = isExpansionCenter(x, y);
+    
+    console.log('🎯 GameBoard タイルクリック:', {
+      position: { x, y },
+      deployable,
+      expansionValid,
+      expansionPreview,
+      expansionCenter,
+      tileType: tile?.type,
+      showDeployable,
+      expansionPatternLength: expansionPattern.length
+    });
     
     if (tile?.type === 'monster' && tile.deployedMonster) {
       selectedMonsterTile = tile;
@@ -173,11 +188,18 @@
     // 召喚モード中で配置可能な位置の場合、プレビューを表示
     if (showDeployable && isDeployable(x, y)) {
       previewPosition = { x, y };
+      console.log('✅ プレビューON:', {
+        position: { x, y },
+        expansionPatternLength: expansionPattern.length
+      });
     }
   }
 
   function handleTileLeave() {
     // プレビューをクリア
+    if (previewPosition) {
+      console.log('❌ プレビューOFF');
+    }
     previewPosition = null;
   }
 
@@ -209,9 +231,19 @@
 </script>
 
 <div class="board" on:contextmenu={handleBoardRightClick}>
+  <!-- デバッグ情報 -->
+  {#if showDeployable}
+    <div style="position: absolute; top: -60px; left: 0; background: yellow; color: black; padding: 8px 12px; border-radius: 4px; font-size: 11px; font-weight: bold; z-index: 1000; max-width: 600px;">
+      <div>配置可能: {deployablePositions.size}個 | プレビュー: {expansionPreviewPositions.size}個</div>
+      <div>展開パターン長: {expansionPattern.length} | 回転: {rotationAngle}° | 有効: {expansionValid ? '✅' : '❌'}</div>
+      {#if previewPosition}
+        <div>プレビュー位置: ({previewPosition.x}, {previewPosition.y})</div>
+      {/if}
+    </div>
+  {/if}
   {#each Array(BOARD_SIZE) as _, y}
     <div class="row">
-      {#key `${expansionPreviewPositions.size}-${previewPosition?.x}-${previewPosition?.y}`}
+      {#key `${expansionPreviewPositions.size}-${previewPosition?.x}-${previewPosition?.y}-${rotationAngle}`}
       {#each Array(BOARD_SIZE) as _, x}
         {@const tile = board[y]?.[x]}
         {@const deployable = isDeployable(x, y)}

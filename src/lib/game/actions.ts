@@ -2,8 +2,8 @@
 import type { GameState, GameAction, RolledDice, CrestType, DeployedMonster, Position, Tile } from './types';
 import { getCurrentPlayer } from './game-logic';
 import { rollDice } from './dice';
-import { canDeployAt, isInBounds, setTile } from './board';
-import { EXPANSION_PATTERNS } from './dice-expansion';
+import { canDeployAt, isInBounds, setTile, BOARD_SIZE } from './board';
+import { EXPANSION_PATTERNS, rotatePattern } from './dice-expansion';
 
 // ゲームアクションを処理
 export function processAction(state: GameState, action: GameAction, playerId: string): boolean {
@@ -17,7 +17,7 @@ export function processAction(state: GameState, action: GameAction, playerId: st
       return handleRollDice(state);
 
     case 'SUMMON_MONSTER':
-      return handleSummonMonster(state, action.diceIds, action.position, playerId);
+      return handleSummonMonster(state, action, playerId);
 
     case 'END_PHASE':
       return handleEndPhase(state);
@@ -82,147 +82,176 @@ function handleRollDice(state: GameState): boolean {
 // モンスター召喚処理
 function handleSummonMonster(
   state: GameState,
-  diceIds: string[],
-  position: import('./types').Position,
+  action: GameAction,
   playerId: string
 ): boolean {
-  if (state.phase !== 'summon') {
+
+  if (state.phase !== 'summon' || action.type !== 'SUMMON_MONSTER') {
     console.log('召喚フェーズではありません');
     return false;
   }
 
+  console.log('🎯 召喚アクション受信:', {
+    playerId,
+    diceIds: action.diceIds,
+    position: action.position,
+    rotation: action.rotation
+  });
+
+  // 1. プレイヤーを取得
   const player = getCurrentPlayer(state);
+  if (!player) return false
 
-  // 最低2つのダイスが必要
-  if (diceIds.length < 2) {
-    console.log('召喚には最低2つのダイスが必要です');
+  // 2. ダイスの所有権チェック
+  const playerDice = player.hand.filter(rd => action.diceIds.includes(rd.dice.id));
+  if (playerDice.length !== action.diceIds.length) {
+    console.error('❌ 無効なダイスID');
     return false;
   }
 
-  // 手札から該当するダイスを取得
-  const selectedDice = diceIds.map(id =>
-    player.hand.find(rd => rd.dice.id === id)
-  ).filter(rd => rd !== undefined) as RolledDice[];
+  // 3. 召喚数字の一致チェック
+  const firstSummonNumber = playerDice[0].rolledFace.summonNumber;
+  const allSameNumber = playerDice.every(
+    rd => rd.rolledFace.crestType === 'summon' &&
+      rd.rolledFace.summonNumber === firstSummonNumber
+  );
 
-  if (selectedDice.length !== diceIds.length) {
-    console.log('指定されたダイスが手札にありません');
+  if (!allSameNumber || playerDice.length < 2) {
+    console.error('❌ 召喚条件を満たしていません');
     return false;
   }
 
-  // すべて召喚クレストで、同じ数字か確認
-  const summonNumbers = selectedDice.map(rd => {
-    if (rd.rolledFace.crestType !== 'summon' || !rd.rolledFace.summonNumber) {
-      return null;
-    }
-    return rd.rolledFace.summonNumber;
+  // 4. 展開パターンを取得して回転
+  const selectedDice = playerDice.findIndex((dice) => dice.dice.id === action.selectedDiceId)
+  const dice = playerDice[selectedDice].dice;
+  const originalPattern = EXPANSION_PATTERNS[dice.expansionPattern];
+
+  console.log('🔍 展開パターン:', {
+    patternIndex: dice.expansionPattern,
+    originalPattern,
+    rotation: action.rotation
   });
 
-  if (summonNumbers.some(num => num === null)) {
-    console.log('すべて召喚クレストである必要があります');
-    return false;
-  }
+  // 回転を適用
+  const rotatedPattern = rotatePattern(originalPattern, action.rotation);
 
-  const firstNumber = summonNumbers[0];
-  if (!summonNumbers.every(num => num === firstNumber)) {
-    console.log('すべて同じ召喚数字である必要があります');
-    return false;
-  }
+  console.log('✅ 回転後のパターン:', rotatedPattern);
 
-  // 配置可能な位置か確認
-  // if (!canDeployAt(state.board, position, playerId)) {
-  //   console.log('その位置には配置できません');
-  //   return false;
-  // }
-
-  // 最初のダイスをモンスターとして召喚
-  const summonedDice = selectedDice[0];
-  const deployedMonster: DeployedMonster = {
-    diceId: summonedDice.dice.id,
-    monster: summonedDice.dice.monster!,
-    level: summonedDice.dice.level,
-    position: position,
-    owner: playerId,
-    hp: summonedDice.dice.monster!.defense
-  };
-
-  // ダイスから展開パターンのインデックスを取得
-  const patternIndex = summonedDice.dice.expansionPattern;
-  const pattern = EXPANSION_PATTERNS[patternIndex];
-
-  if (!pattern) {
-    console.log(`展開パターン ${patternIndex} が存在しません`);
-    return false;
-  }
-
-  console.log(`使用する展開パターン: ${patternIndex}`);
-
-  // パターンを絶対座標に変換
-  const absolutePositions: Position[] = pattern.map(relativePos => ({
-    x: position.x + relativePos.x,
-    y: position.y + relativePos.y
+  // 5. 展開パターンの絶対座標を計算
+  const absolutePositions = rotatedPattern.map(relativePos => ({
+    x: action.position.x + relativePos.x,
+    y: action.position.y + relativePos.y
   }));
+  console.log('✅ 回転後の展開位置:', absolutePositions);
+  // 6. 配置可能性の検証
 
-  // すべての位置が有効か確認
-  for (const pos of absolutePositions) {
-    if (!isInBounds(pos)) {
-      console.log(`展開位置 (${pos.x}, ${pos.y}) が盤面外です`);
-      return false;
-    }
-
-    const tile = state.board[pos.y][pos.x];
-    const isCenter = (pos.x === position.x && pos.y === position.y);
-
-    // 中心以外のマスが配置可能か確認
-    if (!isCenter && !canExpandOnTile(tile, playerId)) {
-      console.log(`展開位置 (${pos.x}, ${pos.y}) に配置できません`);
-      return false;
-    }
+  // 6-1. 配置位置が有効か
+  if (!canDeployAt(state.board, action.position, playerId)) {
+    console.error('❌ 配置できない位置');
+    return false;
   }
 
-  const monster: DeployedMonster = {
-    diceId: summonedDice.dice.id,
-    monster: summonedDice.dice.monster,
-    level: summonedDice.dice.level,
-    position: position,
-    owner: playerId,
-    hp: summonedDice.dice.monster.hp
-  };
+  // 6-2. 展開パターンの全マスが配置可能か
+  for (const relativePos of rotatedPattern) {
+    const absX = action.position.x + relativePos.x;
+    const absY = action.position.y + relativePos.y;
 
-  // 展開パターンに従ってダンジョンタイルを配置
-  for (const pos of absolutePositions) {
-    if (pos.x === position.x && pos.y === position.y) {
-      // 中心はモンスターとして配置
-      setTile(state.board, {
-        position: pos,
-        type: 'monster',
-        owner: playerId,
-        deployedMonster: monster
-      });
+    // 盤面外チェック
+    if (absX < 0 || absX >= BOARD_SIZE || absY < 0 || absY >= BOARD_SIZE) {
+      console.error('❌ 盤面外:', { absX, absY });
+      return false;
+    }
+
+    // ⚠️ 重要：board[y][x] の順序でアクセス
+    const tile = state.board[absY][absX];
+    const isCenter = (absX === action.position.x && absY === action.position.y);
+
+    console.log('🔍 タイル検証:', {
+      position: { x: absX, y: absY },
+      isCenter,
+      tileType: tile.type,
+      tileOwner: tile.owner
+    });
+
+    if (isCenter) {
+      // 中心は空きマスである必要がある
+      if (tile.type !== 'empty') {
+        console.error('❌ 配置位置が空いていません');
+        return false;
+      }
     } else {
-      // 周辺はダンジョンタイルとして配置
-      setTile(state.board, {
-        position: pos,
-        type: 'dungeon',
-        owner: playerId
-      });
+      // 中心以外は空きマスのみOK
+      if (tile.type !== 'empty') {
+        console.error('❌ 展開パターンを配置できません:', {
+          position: { x: absX, y: absY },
+          tileType: tile.type,
+          tileOwner: tile.owner
+        });
+        return false;
+      }
     }
   }
 
-  // 使用したダイスを手札から削除
-  diceIds.forEach(id => {
-    const index = player.hand.findIndex(rd => rd.dice.id === id);
-    if (index !== -1) {
-      player.hand.splice(index, 1);
-    }
+  // 7. モンスター召喚の実行
+
+  // 7-1. 手札からダイスを削除
+  player.hand = player.hand.filter(rd => !action.diceIds.includes(rd.dice.id));
+
+  console.log('✅ ダイス削除完了:', {
+    removedCount: action.diceIds.length,
+    remainingHand: player.hand.length
   });
 
-  console.log(`モンスター召喚成功: ${deployedMonster.monster.name} (Lv${deployedMonster.level})`);
-  console.log(`  位置: (${position.x}, ${position.y})`);
-  console.log(`  攻撃力: ${deployedMonster.monster.attack}`);
-  console.log(`  防御力: ${deployedMonster.monster.defense}`);
-  console.log(`  HP: ${deployedMonster.hp}`);
-  console.log(`  使用したダイス: ${diceIds.length}個`);
-  console.log(`  展開されたマス数: ${absolutePositions.length}個`);
+  // 7-2. モンスターを盤面に配置
+  const monster = dice.monster;
+
+  // ⚠️ 重要：board[y][x] の順序
+  state.board[action.position.y][action.position.x] = {
+    type: 'monster',
+    owner: playerId,
+    position: action.position,
+    deployedMonster: {
+      diceId: dice.id,
+      monster: monster,
+      level: dice.level,
+      position: action.position,
+      owner: player.id,
+      hp: monster.hp,
+    }
+  };
+
+  console.log('✅ モンスター配置完了:', {
+    position: action.position,
+    monster: monster.name,
+    level: dice.level
+  });
+
+  // 7-3. 展開パターンをダンジョンとして配置
+  for (const relativePos of rotatedPattern) {
+    const absX = action.position.x + relativePos.x;
+    const absY = action.position.y + relativePos.y;
+
+    // 中心（モンスター）はスキップ
+    if (absX === action.position.x && absY === action.position.y) continue;
+
+    // ⚠️ 重要：board[y][x] の順序
+    // 空きマスの場合のみダンジョンに変換
+    if (state.board[absY][absX].type === 'empty') {
+      state.board[absY][absX] = {
+        type: 'dungeon',
+        owner: player.id,
+        position: {
+          x: absX,
+          y: absY
+        }
+      };
+      console.log('✅ ダンジョン配置:', { x: absX, y: absY });
+    }
+    // 既に自分のダンジョンの場合はそのまま
+  }
+
+  console.log('🎉 召喚完了！');
+
   return true;
 }
 

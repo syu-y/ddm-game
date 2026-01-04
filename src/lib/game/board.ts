@@ -56,6 +56,7 @@ export function getAdjacentPositions(position: Position): Position[] {
 // モンスターを配置可能な位置かチェック
 export function canDeployAt(board: Tile[][], position: Position, playerId: string): boolean {
   const tile = getTile(board, position);
+  console.log('tile : ' + tile?.position.x + '/' + tile?.position.y)
 
   if (!tile) {
     return false;
@@ -68,7 +69,6 @@ export function canDeployAt(board: Tile[][], position: Position, playerId: strin
 
   // 自分のマスターまたは自分のダンジョン/モンスターに隣接しているかチェック
   const adjacentPositions = getAdjacentPositions(position);
-
   for (const adjPos of adjacentPositions) {
     const adjTile = getTile(board, adjPos);
 

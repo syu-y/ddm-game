@@ -126,7 +126,7 @@ export interface GameState {
 // ゲームアクション
 export type GameAction =
   | { type: 'ROLL_DICE' }
-  | { type: 'SUMMON_MONSTER'; diceIds: string[]; position: Position }
+  | { type: 'SUMMON_MONSTER'; selectedDiceId: string, diceIds: string[]; position: Position; rotation: number; }
   | { type: 'MOVE_MONSTER'; fromPosition: Position; toPosition: Position }
   | { type: 'ATTACK_MONSTER'; attackerPosition: Position; targetPosition: Position }
   | { type: 'END_PHASE' }

@@ -22,15 +22,15 @@ import type { Position, Tile } from './types';
 export const EXPANSION_PATTERNS: Position[][] = [
   // Pattern 0: T字
   // ■
-  // □■■■
+  // ■□■■
   // ■
   [
     { x: 0, y: 0 },   // 中心（モンスター）
     { x: 1, y: 0 },   // 右
     { x: 2, y: 0 },   // 右2マス
-    { x: 3, y: 0 },  // 右3マス
-    { x: 0, y: -1 },  // 上
-    { x: 0, y: 1 },   // 下
+    { x: -1, y: -1 },   // 左上
+    { x: -1, y: 0 },  // 左
+    { x: -1, y: 1 },   // 左下
   ],
 
   // Pattern 1: 直線＋上下1
