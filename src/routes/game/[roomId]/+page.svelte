@@ -14,7 +14,7 @@
     sendGameAction
   } from '$lib/stores/game-store';
   import { getSummonableGroups } from '$lib/game/dice';
-  import { EXPANSION_PATTERNS } from '$lib/game/dice-expansion';
+  import { EXPANSION_PATTERNS, rotatePattern } from '$lib/game/dice-expansion';
   import type { Position } from '$lib/game/types';
   import GameBoard from '$lib/components/GameBoard.svelte';
   import PlayerInfo from '$lib/components/PlayerInfo.svelte';
@@ -30,6 +30,18 @@
   let selectedPosition: Position | null = null;
   let previousHandSize = 0;
   let expansionPattern: Position[] = [];
+  let rotationAngle: number = 0; // 展開パターンの回転角度（0, 90, 180, 270）
+  let rotatedExpansionPattern: Position[] = []; // 回転後の展開パターン
+  
+  // 回転後の展開パターンをリアクティブに計算
+  $: {
+    rotatedExpansionPattern = rotatePattern(expansionPattern, rotationAngle);
+    console.log('🔄 Rotation:', {
+      rotationAngle,
+      originalPattern: expansionPattern,
+      rotatedPattern: rotatedExpansionPattern
+    });
+  }
 
   // ゲーム状態の変化を監視して召喚モードをリセット
   $: {
@@ -43,6 +55,7 @@
         selectedDiceId = null;
         selectedPosition = null;
         expansionPattern = [];
+        rotationAngle = 0;
       }
       
       previousHandSize = currentHandSize;
@@ -75,8 +88,10 @@
     if (selectedDiceId === diceId) {
       selectedDiceId = null;
       expansionPattern = [];
+      rotationAngle = 0;
     } else {
       selectedDiceId = diceId;
+      rotationAngle = 0; // 新しいダイスを選択したら回転をリセット
       
       // 選択したダイスの展開パターンを取得
       const player = $gameState.players.find(p => p.id === $playerId);
@@ -121,6 +136,12 @@
     previousHandSize = player.hand.length;
 
     summonMode = true;
+    console.log('✅ 召喚モード開始:', {
+      summonMode,
+      expansionPattern: expansionPattern.length,
+      rotatedPattern: rotatedExpansionPattern.length,
+      rotationAngle
+    });
   }
 
   // 召喚キャンセル
@@ -129,6 +150,13 @@
     selectedDiceId = null;
     selectedPosition = null;
     expansionPattern = [];
+    rotationAngle = 0;
+  }
+  
+  // 展開パターンを回転（右クリック時に呼ばれる）
+  function rotateExpansionPattern() {
+    if (!summonMode) return;
+    rotationAngle = (rotationAngle + 90) % 360;
   }
 
   // 盤面クリック
@@ -215,9 +243,12 @@
         <main class="board-area">
           {#if summonMode}
             <div class="summon-guide">
-              <div class="guide-title">📍 召喚モード</div>
+              <div class="guide-title">📍 召喚モード {#if rotationAngle > 0}🔄 {rotationAngle}°{/if}</div>
               <div class="guide-text">
                 緑色のマスにマウスをホバーすると展開パターンが表示されます
+              </div>
+              <div class="guide-text" style="font-size: 0.85rem; margin-top: 4px; opacity: 0.9;">
+                右クリックで展開パターンを回転できます
               </div>
             </div>
           {/if}
@@ -226,7 +257,9 @@
             onTileClick={handleTileClick}
             highlightedPositions={selectedPosition ? [selectedPosition] : []}
             showDeployable={summonMode}
-            expansionPattern={expansionPattern}
+            expansionPattern={rotatedExpansionPattern}
+            onRotatePattern={rotateExpansionPattern}
+            rotationAngle={rotationAngle}
           />
         </main>
 
@@ -391,6 +424,21 @@
   .guide-text {
     font-size: 0.9rem;
     opacity: 0.95;
+  }
+
+  @keyframes rotate-flash {
+    0% {
+      transform: scale(1);
+      box-shadow: 0 0 20px rgba(76, 175, 80, 0.4);
+    }
+    50% {
+      transform: scale(1.05);
+      box-shadow: 0 0 40px rgba(76, 175, 80, 0.8);
+    }
+    100% {
+      transform: scale(1);
+      box-shadow: 0 0 20px rgba(76, 175, 80, 0.4);
+    }
   }
 
   .opponent-hand-info {

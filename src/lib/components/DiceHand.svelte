@@ -92,6 +92,7 @@
   // 展開パターンを取得
   function getExpansionPattern(dice: RolledDice): Position[] {
     const patternIndex = dice.dice.expansionPattern;
+    console.log(patternIndex)
     return EXPANSION_PATTERNS[patternIndex] || [];
   }
 
@@ -99,9 +100,9 @@
   function generateExpansionGrid(pattern: Position[]): boolean[][] {
     const grid: boolean[][] = [];
     // 5x5のグリッド（中心が0,0）
-    for (let y = -2; y <= 2; y++) {
+    for (let y = -3; y <= 3; y++) {
       const row: boolean[] = [];
-      for (let x = -2; x <= 2; x++) {
+      for (let x = -3; x <= 3; x++) {
         const isInPattern = pattern.some(pos => pos.x === x && pos.y === y);
         row.push(isInPattern);
       }
@@ -245,7 +246,7 @@
             {#each expansionGrid as row, y}
               <div class="expansion-row">
                 {#each row as cell, x}
-                  {@const isCenter = y === 2 && x === 2}
+                  {@const isCenter = y === 3 && x === 3}
                   <div class="expansion-cell {cell ? 'active' : ''} {isCenter ? 'center' : ''}">
                     {#if isCenter}
                       🐉

@@ -7,7 +7,9 @@
   export let onTileClick: (position: Position) => void = () => {};
   export let highlightedPositions: Position[] = [];
   export let showDeployable: boolean = false;
-  export let expansionPattern: Position[] = []; // 展開パターン（相対座標）
+  export let expansionPattern: Position[] = []; // 展開パターン（相対座標、回転済み）
+  export let onRotatePattern: () => void = () => {}; // 回転処理関数
+  export let rotationAngle: number = 0; // 現在の回転角度
 
   const BOARD_SIZE = 13;
   
@@ -20,10 +22,25 @@
   let expansionValid: boolean = false;
 
   // 配置可能な位置をリアクティブに計算
-  $: deployablePositions = calculateDeployablePositions(board, showDeployable, $gameState, $playerId);
+  $: {
+    deployablePositions = calculateDeployablePositions(board, showDeployable, $gameState, $playerId);
+    if (showDeployable && deployablePositions.size > 0) {
+      console.log('🟢 配置可能マス検出:', deployablePositions.size, Array.from(deployablePositions));
+    }
+  }
 
   // 展開プレビューの位置を計算
-  $: expansionPreviewPositions = calculateExpansionPreview(previewPosition, expansionPattern);
+  $: {
+    expansionPreviewPositions = calculateExpansionPreview(previewPosition, expansionPattern);
+    if (expansionPattern.length > 0) {
+      console.log('📊 GameBoard expansionPattern:', {
+        length: expansionPattern.length,
+        pattern: expansionPattern,
+        previewPosition,
+        previewPositionsSize: expansionPreviewPositions.size
+      });
+    }
+  }
   
   // 展開パターンが有効かどうかをチェック
   $: expansionValid = checkExpansionValidity(previewPosition, expansionPattern, board, $playerId);
@@ -183,9 +200,15 @@
     
     return '';
   }
+  function handleBoardRightClick(event: MouseEvent) {
+    if (showDeployable) {
+      event.preventDefault(); // デフォルトのコンテキストメニューを無効化
+      onRotatePattern();
+    }
+  }
 </script>
 
-<div class="board">
+<div class="board" on:contextmenu={handleBoardRightClick}>
   {#each Array(BOARD_SIZE) as _, y}
     <div class="row">
       {#key `${expansionPreviewPositions.size}-${previewPosition?.x}-${previewPosition?.y}`}
@@ -354,6 +377,7 @@
     border: 5px solid rgba(100, 200, 255, 1) !important;
     animation: pulse-expansion 1.2s infinite !important;
     z-index: 150 !important;
+    transition: all 0.3s ease-out;
   }
 
   .tile.expansion-center-valid,
@@ -365,6 +389,7 @@
     border: 6px solid rgba(255, 165, 0, 1) !important;
     animation: pulse-center 1s infinite !important;
     z-index: 160 !important;
+    transition: all 0.3s ease-out;
   }
 
   /* 展開プレビュー - 無効 */
@@ -377,6 +402,7 @@
     border: 5px solid rgba(255, 50, 50, 1) !important;
     animation: pulse-invalid 1.2s infinite !important;
     z-index: 150 !important;
+    transition: all 0.3s ease-out;
   }
 
   .tile.expansion-center-invalid,
@@ -388,6 +414,7 @@
     border: 6px solid rgba(255, 0, 0, 1) !important;
     animation: pulse-invalid 1s infinite !important;
     z-index: 160 !important;
+    transition: all 0.3s ease-out;
   }
 
   @keyframes pulse-expansion {

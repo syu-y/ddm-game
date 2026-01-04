@@ -2,7 +2,7 @@
   import { goto } from '$app/navigation';
   import { createRoom, joinRoom, quickMatch, cancelQuickMatch } from '$lib/stores/game-store';
 
-  let name = '';
+  let name = 'あなたの名前';
   let roomIdInput = '';
   let mode: 'menu' | 'create' | 'join' | 'quick' = 'menu';
   let loading = false;
