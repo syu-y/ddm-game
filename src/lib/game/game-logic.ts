@@ -1,4 +1,4 @@
-import type { GameState, Player } from './types';
+import type { Dice, GameState, Player } from './types';
 import { createDicePoolFromDeck } from './dice';
 import { createDefaultDeck } from './deck-builder';
 import { createBoard } from './board';
@@ -11,8 +11,8 @@ export function createGame(roomId: string, player1Name: string, player2Name: str
   const player2Deck = createDefaultDeck();
 
   // ダイスプールを生成
-  const player1DicePool = createDicePoolFromDeck(player1Deck, player1Id);
-  const player2DicePool = createDicePoolFromDeck(player2Deck, player2Id);
+  const player1DicePool = shuffleArray(createDicePoolFromDeck(player1Deck, player1Id));
+  const player2DicePool = shuffleArray(createDicePoolFromDeck(player2Deck, player2Id));
 
   const players: Player[] = [
     {
@@ -64,4 +64,12 @@ export function createGame(roomId: string, player1Name: string, player2Name: str
 
 export function getCurrentPlayer(state: GameState): Player {
   return state.players.find(p => p.id === state.currentTurn)!;
+}
+
+export function shuffleArray(array: Dice[]): Dice[] {
+  for (let i = array.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [array[i], array[j]] = [array[j], array[i]]
+  }
+  return array;
 }

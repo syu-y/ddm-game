@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import type { GameState, GameAction, RolledDice, CrestType, DeployedMonster, Position, Tile } from './types';
-import { getCurrentPlayer } from './game-logic';
+import { getCurrentPlayer, shuffleArray } from './game-logic';
 import { rollDice } from './dice';
 import { canDeployAt, isInBounds, setTile, BOARD_SIZE } from './board';
 import { EXPANSION_PATTERNS, rotatePattern } from './dice-expansion';
@@ -195,7 +195,7 @@ function handleSummonMonster(
   // 7. モンスター召喚の実行
 
   // 7-1. 手札からダイスを削除
-  player.hand = player.hand.filter(rd => !action.diceIds.includes(rd.dice.id));
+  player.hand = player.hand.filter(rd => rd.dice.id !== dice.id);
 
   console.log('✅ ダイス削除完了:', {
     removedCount: action.diceIds.length,
@@ -313,8 +313,23 @@ function handleEndTurn(state: GameState): boolean {
   const currentIndex = state.players.findIndex(p => p.id === state.currentTurn);
   const nextIndex = (currentIndex + 1) % state.players.length;
 
-  // 現在のプレイヤーの手札をクリア
+  // 現在のプレイヤー
   const currentPlayer = state.players[currentIndex];
+
+  // 召喚しなかったダイスはダイスプールに戻す
+  const dice1 = currentPlayer.hand.pop()?.dice;
+  const dice3 = currentPlayer.hand.pop()?.dice;
+  const dice2 = currentPlayer.hand.pop()?.dice;
+  if (dice1) currentPlayer.dicePool.push(dice1)
+  if (dice2) currentPlayer.dicePool.push(dice2)
+  if (dice3) currentPlayer.dicePool.push(dice3)
+  // ダイスプールをシャッフル
+  currentPlayer.dicePool = shuffleArray(currentPlayer.dicePool);
+
+  console.log(`dice1 : ${dice1?.monster.name}`);
+  console.log(`dice2 : ${dice2?.monster.name}`);
+  console.log(`dice3 : ${dice3?.monster.name}`);
+  // 手札をクリア
   currentPlayer.hand = [];
 
   // ターン交代
